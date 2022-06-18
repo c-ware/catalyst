@@ -41,6 +41,22 @@
  * @name: cstring
  *
  * @embed structure: CString
+ * @embed structure: CStrings
+ * @embed function: cstring_init
+ * @embed function: cstring_free
+ * @embed function: cstring_loadf
+ * @embed function: cstring_reset
+ * @embed function: cstring_finds
+ * @embed function: cstring_find
+ * @embed function: cstring_strip
+ * @embed function: cstring_strips
+ * @embed function: cstring_endswiths
+ * @embed function: cstring_endswith
+ * @embed function: cstring_concats
+ * @embed function: cstring_startswiths
+ * @embed function: cstring_startswith
+ * @embed function: cstring_concat
+ * @embed function: cstring_slice
  *
  * @description
  * @An ANSI C compliant dynamically allocated string implementation with a
@@ -53,8 +69,32 @@
  * @cstrings are NUL terminated, while also having a length field for any
  * @situations where the programmer may want length-prefixed strings, such as
  * @constant time length operations, and the need for the NUL byte in the body
- * @of the string.
+ * @of the string. What follows is a list of each operation's manual, and a 
+ * @brief description of it.
+ * @
+ * @table
+ * @sep: ;
+ * @Manual;Description
+ * @cstring_init(cware);initialize a new cstring
+ * @cstring_free(cware);release a cstring from memory
+ * @cstring_loadf(cware);load a file (not a stream) into a cstring
+ * @cstring_reset(cware);reset a cstring to be reused
+ * @cstring_finds(cware);find a c-style string in a cstring
+ * @cstring_find(cware);find a cstring in a cstring
+ * @cstring_strip(cware);strip a cstring from a cstring
+ * @cstring_strips(cware);stip a c-style string from a cstring
+ * @cstring_endswiths(cware);check if a cstring ends with a c-style string
+ * @cstring_endswith(cware);check if a cstring ends with a cstring
+ * @cstring_concats(cware);concatenate a c-style string onto a cstring
+ * @cstring_startswiths(cware);check if a cstring starts with a c-style string
+ * @cstring_startswith(cware);check if a cstring starts with a cstring
+ * @cstring_concat(cware);concatenate a cstring onto another cstring
+ * @cstring_slice(cware);slice a range of a cstring
+ * @table
+ * @
  * @description
+ *
+ * @reference: cware(cware)
 */
 
 #ifndef CWARE_CSTRING_H
@@ -92,6 +132,47 @@ struct CString {
     int length;
     int capacity;
     char *contents;
+};
+
+/* CArray integration
+ *
+ * It is very much worth keeping in mind that this is NOT
+ * an array of POINTERS to cstrings. This is an array of
+ * CSTRINGS. This is notable because if somebody assigns
+ * a copy of the cstring in the array to a variable, then
+ * any modifications to the variable will not carry over
+ * to the one in the array, since it is a copy. This is
+ * a problem because it will end up creating an inconsistency
+ * between the array and the variables.
+ *
+ * If you need to have behavior that carries over to the
+ * things in the array, store a pointer to the array element
+ * rather than a stack copy.
+*/
+
+#define CSTRING_TYPE    struct CString
+#define CSTRING_HEAP    1
+#define CSTRING_FREE(value) \
+    cstring_free((value))
+
+/*
+ * @docgen: structure
+ * @brief: an array of cstrings-- integration with carray(cware)
+ * @name: CStrings
+ *
+ * @field length: the length of the array
+ * @type: int
+ *
+ * @field capacity: the physical capacity of the array
+ * @type: int
+ *
+ * @field contents: the strings in the array
+ * @type: struct CString *
+*/
+struct CStrings {
+    int length;
+    int capacity;
+    struct CString *contents;
 };
 
 /*
