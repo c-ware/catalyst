@@ -63,10 +63,54 @@ struct Testcases {
     struct Testcase *contents;
 };
 
+/*
+ * @docgen: structure
+ * @brief: a make(1) job that catalyst executes
+ * @name: Job
+ *
+ * @param name[JOB_NAME + 1]: the name of the job
+ * @type: char
+ *
+ * @param make_path[MAKE_PATH + 1]: the path to the make(1) binary
+ * @type: char
+ *
+ * @param make_arguments: array of arguments to pass to make(1)
+ * @type: struct CStrings *
+*/
 struct Job {
     char name[JOB_NAME + 1];
     char make_path[MAKE_PATH + 1];
     struct CStrings *make_arguments;
 };
+
+/*
+ * @docgen: structure
+ * @brief: array of make(1) jobs that catalyst executes
+ * @name: Jobs
+ *
+ * @param length: the length of the array
+ * @type: int
+ *
+ * @param capacity: the capacity of the array
+ * @type: int
+ *
+ * @param contents: the jobs in the array
+ * @type: struct Jobs *
+*/
+struct Jobs {
+    int length;
+    int capacity;
+    struct Jobs *contents;
+};
+
+
+
+
+
+
+
+
+
+
 
 #endif
