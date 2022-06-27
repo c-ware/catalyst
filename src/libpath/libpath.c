@@ -39,71 +39,53 @@
  * Implementations of the libpath functions.
 */
 
+#include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 
-/* MS-DOS has a header specifically for it that contains
- * system calls for reading files */
-#if defined(_MSDOS)
-#include <dos.h>
-#endif
-
-/* Inclusions for the stat system call, or any equivalent
- * of it */
-#if defined(_MSDOS) || defined(_WIN32) || defined(__unix__)
-#include <sys/stat.h>
-#endif
-
-/* Inclusions for file system operations like making and
- * removing directories */
-#if defined(_MSDOS)
-#include <direct.h>
-#endif
-
-#if defined(__unix__) || defined(_WIN32)
-#include <unistd.h>
-#endif
-
 #include "libpath.h"
-#include "libpath_internal.h"
+#include "lp_inter.h"
 
 int libpath_join_path(char *buffer, int length, ...) {
-    char *path = NULL;
-    size_t written = 0;
-    va_list paths = {0};
-    int buffer_cursor = 0;
+    int written = 0;
+    va_list path_segment;
+    char *segment = NULL;
 
-    liberror_is_null(libpath_join_path, buffer);
-    liberror_is_negative(libpath_join_path, length);
+    INIT_VARIABLE(path_segment);
+    va_start(path_segment, length);
 
-    va_start(paths, length);
+    segment = va_arg(path_segment, char *);
 
-    /* Get each path component */
-    while((path = va_arg(paths, char*)) != NULL) {
-        int path_cursor = 0;
+    while(segment != NULL) {
+        int cursor = 0;
 
-        if(buffer_cursor == length) {
-            written = length + 1;
-
-            break;
-
+        /* Write the path segment to the buffer */
+        while(written < length && segment[cursor] != '\0') {
+            buffer[written] = segment[cursor];
+            cursor++;
+            written++;
         }
 
-        /* Write the path */
-        for(path_cursor = 0; path[path_cursor] != '\0'; path_cursor++) {
-            if(buffer_cursor == length)
-                break;
+        cursor = 0;
+        segment = va_arg(path_segment, char *);
 
-            buffer[buffer_cursor] = path[path_cursor];
-            buffer_cursor++;
+        if(segment == NULL)
+            break;
+
+
+        /* Write the path separator if the next one is not NULL */
+        while(written < length && LIBPATH_SEPARATOR[cursor]) {
+            buffer[written] = LIBPATH_SEPARATOR[cursor];
+            cursor++;
             written++;
         }
     }
 
-    va_end(paths);
-    buffer[buffer_cursor] = '\0';
-
+    buffer[written] = '\0';
+    
     return written;
 }
 
@@ -165,15 +147,29 @@ static int matches_glob(const char *name, const char *pattern) {
         /* Match characters in the pattern until a wildcard
          * character is found. */
         while(pattern[pattern_cursor] != '*') {
-            if(pattern[pattern_cursor] == '\0' || name[name_cursor] == '\0')
-                break;
+            if(pattern[pattern_cursor] == '\0' || name[name_cursor] == '\0') {
+                /* Pattern exhausted before the name */
+                if(pattern[pattern_cursor] == '\0' && name[name_cursor] != '\0')
+                    return 0;
 
+                break;
+            }
+
+#if defined(_MSDOS)
+            if(toupper(pattern[pattern_cursor]) == toupper(name[name_cursor])) {
+                name_cursor++;
+                pattern_cursor++;
+
+                continue;
+            }
+#else
             if(pattern[pattern_cursor] == name[name_cursor]) {
                 name_cursor++;
                 pattern_cursor++;
 
                 continue;
             }
+#endif
 
             /* Match not valid! */
             return 0;
@@ -192,44 +188,168 @@ static int matches_glob(const char *name, const char *pattern) {
          * as name[name_cursor] will be on the NUL byte. This section
          * will essentially just exhaust the wildcard.
         */
-        while(name[name_cursor] != stop_char)
+#if defined(_MSDOS)
+        while(toupper(name[name_cursor]) != toupper(stop_char) && toupper(name[name_cursor]) != '\0')
             name_cursor++;
+#else
+        while(name[name_cursor] != stop_char && name[name_cursor] != '\0')
+            name_cursor++;
+#endif
 
         /* Name exhausted before the path */
+#if defined(_MSDOS)
+        if(toupper(name[name_cursor]) == '\0' && toupper(pattern[pattern_cursor]) != '\0')
+            return 0;
+#else
         if(name[name_cursor] == '\0' && pattern[pattern_cursor] != '\0')
             return 0;
+#endif
+
     }
 
     return 1;
 }
 
 #if defined(__unix__)
-struct LibpathFiles *libpath_glob(const char *path, const char *pattern) {
+struct LibpathFiles libpath_glob(const char *path, const char *pattern) {
     DIR *directory = NULL;
     struct dirent *entry = NULL;
-    struct LibpathFiles *globbed_files = NULL;
+    struct LibpathFiles globbed_files;
  
+    INIT_VARIABLE(globbed_files);
+
+    /* Rather than use the base carray initialization logic, we do
+     * our own initialization because carray has no way to initialize
+     * a stack structure but with a heap contents field. */
+    globbed_files.length = 0;
+    globbed_files.capacity = 5;
+    globbed_files.contents = malloc(sizeof(struct LibpathFile) * 5);
+
     directory = opendir(path);
-    globbed_files = carray_init(globbed_files, FILE);
 
     /* Iterate through the contents of this directory. */
     while((entry = readdir(directory)) != NULL) {
         struct LibpathFile new_path;
 
-        /* This path does not match the glob pattern-- ignore it */
-        if(libpath_matches_glob(entry->d_name, pattern) == 0)
+        /* No thanks */
+        if(strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
 
-        /* Replace this with libpath_join_path eventually.. */
-        sprintf(new_path.path, "%s/%s", path, entry->d_name);
+        /* This path does not match the glob pattern-- ignore it */
+        if(matches_glob(entry->d_name, pattern) == 0)
+            continue;
 
-        carray_append(globbed_files, new_path, FILE);
+        if(libpath_join_path(new_path.path, LIBPATH_GLOB_PATH_LENGTH, path,
+                             entry->d_name, NULL) >= LIBPATH_GLOB_PATH_LENGTH) {
+            liberror_unhandled(libpath_glob);
+        }
+
+        carray_append(&globbed_files, new_path, FILE);
     }
-
 
     closedir(directory);
 
     return globbed_files;
 }
-
 #endif
+
+#if defined(_MSDOS)
+struct LibpathFiles libpath_glob(const char *path, const char *pattern) {
+    int status = -1;
+    struct _find_t node;
+    struct LibpathFiles globbed_files;
+    char glob_path[LIBPATH_GLOB_PATH_LENGTH + 1] = "";
+ 
+    INIT_VARIABLE(node);
+    INIT_VARIABLE(globbed_files);
+
+    /* Rather than use the base carray initialization logic, we do
+     * our own initialization because carray has no way to initialize
+     * a stack structure but with a heap contents field. */
+    globbed_files.length = 0;
+    globbed_files.capacity = 5;
+    globbed_files.contents = malloc(sizeof(struct LibpathFile) * 5);
+
+    /* Build the path to the glob. */
+    if(libpath_join_path(glob_path, LIBPATH_GLOB_PATH_LENGTH, path, "*.*",
+                         NULL) >= LIBPATH_GLOB_PATH_LENGTH) {
+        fprintf(stderr, "libpath_glob: could not glob path '%s': glob path full\n", glob_path);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Begin node iteration */
+    status = _dos_findfirst(glob_path, _A_NORMAL | _A_SUBDIR, &node);
+
+    /* Iterate through the contents of this node. */
+    while(status == 0) {
+        struct LibpathFile new_path;
+
+        /* No thanks */
+        if(strcmp(node.name, ".") == 0 || strcmp(node.name, "..") == 0) {
+            status = _dos_findnext(&node);
+
+            continue;
+        }
+
+        /* This path does not match the glob pattern-- ignore it */
+        if(matches_glob(node.name, pattern) == 0)  {
+            status = _dos_findnext(&node);
+
+            continue;
+        }
+
+        if(libpath_join_path(new_path.path, LIBPATH_GLOB_PATH_LENGTH, path,
+                             node.name, NULL) >= LIBPATH_GLOB_PATH_LENGTH) {
+            liberror_unhandled(libpath_glob);
+        }
+
+        carray_append(&globbed_files, new_path, FILE);
+
+        status = _dos_findnext(&node);
+    }
+
+    /* Handle errors */
+    if(status == -1) {
+        fprintf(stderr, "libpath_glob: failed to glob path '%s' (%s)\n", glob_path,
+                strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    return globbed_files;
+}
+#endif
+
+void libpath_free_glob(struct LibpathFiles files) {
+    free(files.contents);
+}
+
+/*
+ * ITERATION LOGIC
+*/
+struct LibpathDirState libpath_directory_iter_start(const char *path) {
+    struct LibpathDirState new_state;
+
+    INIT_VARIABLE(new_state);
+
+    new_state.status = 1;
+
+    /* Directory opening can fail */
+    if((new_state.directory = opendir(path)) == NULL) {
+        fprintf(stderr, "libpath_directory_iter: failed to open directory '%s' (%s)\n",
+                path, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    /* No nodes in the directory */
+    if((new_state.entry = readdir(new_state.directory)) == NULL)
+        new_state.status = 0;
+
+    /* Initialize directory state node */
+    if(libpath_join_path(new_state.path, LIBPATH_MAX_PATH, new_state.entry->d_name, NULL) >= LIBPATH_MAX_PATH) {
+        fprintf(stderr, "libpath_directory_iter: directory path '%s%s%s' cannot fit in"
+                "path buffer\n", path, LIBPATH_SEPARATOR, new_state.entry->d_name);
+        exit(EXIT_FAILURE);
+    }
+
+    return new_state;
+}

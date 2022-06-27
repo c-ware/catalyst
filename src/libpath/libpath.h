@@ -40,6 +40,8 @@
  * @brief: portably handle file system paths and operations
  * @name: libpath
  *
+ * @embed structure: LibpathDirState
+ *
  * @description
  * @A library for portably handling file system paths, and file system
  * @operations on multiple operating systems. It comes with pre-defined
@@ -62,6 +64,42 @@
 #define CWARE_LIBCWPATH_H
 
 #define CWARE_LIBCWPATH_VERSION  "1.0.1"
+
+/* Limits */
+#define LIBPATH_GLOB_PATH_LENGTH    256 + 1
+
+#define libpath_directory_iter(path, node)              \
+    for((node) = libpath_directory_iter_start(path);    \
+        (node).status == 1;                             \
+        (node) = libpath_directory_iter_next()
+
+/* Inclusions for traversing directories */
+
+/* MS-DOS has a header specifically for it that contains
+ * system calls for reading files */
+#if defined(_MSDOS)
+#include <dos.h>
+#endif
+
+#if defined(__unix__)
+#include <dirent.h>
+#endif
+
+/* Inclusions for the stat system call, or any equivalent
+ * of it */
+#if defined(_MSDOS) || defined(_WIN32) || defined(__unix__)
+#include <sys/stat.h>
+#endif
+
+/* Inclusions for file system operations like making and
+ * removing directories */
+#if defined(_MSDOS)
+#include <direct.h>
+#endif
+
+#if defined(__unix__) || defined(_WIN32)
+#include <unistd.h>
+#endif
 
 /* 
  * The maximum path lengths of various operating systems
@@ -131,6 +169,65 @@
 #endif
 
 /*
+ * @docgen: structure
+ * @brief: a file on the file system
+ * @name: LibpathFile
+ *
+ * @field path[LIBPATH_GLOB_PATH_LENGTH + 1]: the path to the file
+ * @type: char
+*/
+struct LibpathFile {
+    char path[LIBPATH_GLOB_PATH_LENGTH + 1];
+};
+
+/*
+ * @docgen: structure
+ * @brief: an array of files
+ * @name: LibpathFiles
+ *
+ * @field length: the length of the array
+ * @type: int
+ *
+ * @field capacity: the capacity of the array
+ * @type: int
+ *
+ * @field contents: the files in the array
+ * @type: struct LibpathFile *
+*/
+struct LibpathFiles {
+    int length;
+    int capacity;
+    struct LibpathFile *contents;
+};
+
+/*
+ * @docgen: structure
+ * @brief: state container for directory iteration
+ * @name: LibpathDirState
+ *
+ * @field status: whether or not to continue iteration
+ * @type: int
+ *
+ * @field path[LIBPATH_MAX_PATH + 1]: the path to the node
+ * @type: char
+ *
+ * @field directory: the iteration directory
+ * @type: DIR *
+ *
+ * @field entry: the node in the iteration
+ * @type: struct dirent *
+*/
+struct LibpathDirState {
+    int status;
+    char path[LIBPATH_MAX_PATH + 1];
+
+#if defined(__unix__)
+    DIR *directory;
+    struct dirent *entry;
+#endif
+};
+
+/*
  * @docgen: function
  * @brief: join a variable number of path segments into a single buffer
  * @name: libpath_join_path
@@ -169,7 +266,12 @@
  * @return: the number of bytes written
  * @type: int
 */
+#if defined(__GNUC__)
+int libpath_join_path(char *buffer, int length, ...)
+    __attribute__((sentinel(0)));
+#else
 int libpath_join_path(char *buffer, int length, ...);
+#endif
 
 /*
  * @docgen: function
@@ -331,11 +433,11 @@ int libpath_exists(const char *path);
  * @
  * @int main(void) {
  * @    int index = 0;
- * @    struct LibpathFiles *globbed_files = libpath_glob("./",  "*.*");
+ * @    struct LibpathFiles globbed_files = libpath_glob("./",  "*.*");
  * @
  * @    // Display all globbed files
- * @    for(index = 0; index < globbed_files->length; index++) {
- * @        struct LibpathFile file = globbed_files->contents[index];
+ * @    for(index = 0; index < globbed_files.length; index++) {
+ * @        struct LibpathFile file = globbed_files.contents[index];
  * @
  * @        printf("Globbed file: '%s'\n", file.path);
  * @    }
@@ -343,7 +445,93 @@ int libpath_exists(const char *path);
  * @    return 0;
  * @}
  * @example
+ *
+ * @param path: the path to glob in
+ * @type: const char *
+ *
+ * @param pattern: the pattern to glob
+ * @type: const char *
+ *
+ * @return: an array of globbed paths
+ * @type: struct LibpathFiles
 */
-struct LibpathFiles *libpath_glob(const char *path, const char *pattern);
+struct LibpathFiles libpath_glob(const char *path, const char *pattern);
+
+/*
+ * @docgen: function
+ * @brief: release a glob from memory
+ * @name: libpath_free_glob
+ *
+ * @include: libpath.h
+ *
+ * @description
+ * @Releases an array of globbed files from memory.
+ * @description
+ *
+ * @example
+ * @#include <stdio.h>
+ * @#include <errno.h>
+ * @#include <stdlib.h>
+ * @#include <string.h>
+ * @
+ * @#include "libpath.h"
+ * @
+ * @int main(void) {
+ * @    int index = 0;
+ * @    struct LibpathFiles globbed_files = libpath_glob("./",  "*.*");
+ * @
+ * @    // Display all globbed files
+ * @    for(index = 0; index < globbed_files.length; index++) {
+ * @        struct LibpathFile file = globbed_files.contents[index];
+ * @
+ * @        printf("Globbed file: '%s'\n", file.path);
+ * @    }
+ * @
+ * @    libpath_free_glob(globbed_files);
+ * @
+ * @    return 0;
+ * @}
+ * @example
+ *
+ * @param files: the files to release
+ * @type: struct LibpathFiles
+*/
+void libpath_free_glob(struct LibpathFiles files);
+
+/*
+ * @docgen: function
+ * @brief: start iteration through a directory
+ * @name: libpath_directory_iter_start
+ *
+ * @include: libpath.h
+ *
+ * @description
+ * @Begin iteration through a directory. This function does not guarantee
+ * @any particular ordering. Iteration through directories with this
+ * @function also does include the . and .. special directories if they
+ * @exist on the operating system.
+ * @description
+ *
+ * @example
+ * @See examples for libpath_directory_iter(cware).
+ * @example
+ *
+ * @error: path is NULL
+ * @error: path is not a directory
+ *
+ * @return: a new directory state
+ * @type: struct LibpathDirState
+*/
+struct LibpathDirState libpath_directory_iter_start(const char *path);
+
+
+
+
+
+
+
+
+
+
 
 #endif

@@ -40,7 +40,10 @@
 #include "catalyst.h"
 
 int main(int argc, char **argv) {
-    if(libpath_exists(CONFIGURATION_FILE) == 0)
+    if(libpath_exists(CONFIGURATION_FILE) == 0) {
+        fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
+        exit(EXIT_FAILURE);
+    }
 
     return EXIT_SUCCESS;
 }
