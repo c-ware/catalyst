@@ -1,0 +1,15 @@
+
+
+job: {
+    name: "gcc"
+    make: "nmake"
+    arguments: "..."
+}
+
+testcase: {
+    file: "filename"
+    argv: "foo", "bar", "baz"
+    stdout: "foo bar baz\ntuna spam thud\nwaldo quz buzz\n"
+    stdin: "hi i am writing this to your stdin"
+    timeout: 500
+}

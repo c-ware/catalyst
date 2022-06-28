@@ -35,20 +35,30 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdlib.h>
+/*
+ * Functions for evaluating conditions based off the position
+ * of the cursor.
+*/
 
-#include "catalyst.h"
+#include <string.h>
 
-int main(int argc, char **argv) {
-    struct Configuration configuration;
+#include "libmatch.h"
 
-    if(libpath_exists(CONFIGURATION_FILE) == 0) {
-        fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
-        exit(EXIT_FAILURE);
+int libmatch_cond_before(struct LibmatchCursor *cursor, int ch,
+                         const char *characters) {
+    int index = cursor->cursor;
+
+    while(index < cursor->length) {
+        int cursor_char = cursor->buffer[index];
+
+        if(cursor_char == ch)
+            return 1;
+
+        if(strchr(characters, cursor_char) != NULL)
+            return 0;
+
+        index++;
     }
 
-    INIT_VARIABLE(configuration);
-    configuration = parse_configuration(CONFIGURATION_FILE);
-
-    return EXIT_SUCCESS;
+    return 0;
 }
