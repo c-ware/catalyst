@@ -46,6 +46,7 @@
 #define MAKE_PATH       128 + 1
 
 #define QUALIFIER_NAME_LENGTH   32 + 1
+#define JOB_KEY_NAME_LENGTH     32 + 1
 
 /* Enumerations */
 #define QUALIFIER_UNKNOWN   0

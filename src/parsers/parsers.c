@@ -291,7 +291,27 @@ int enumerate_qualifier(struct LibmatchCursor *cursor) {
  * @return: an integer describing the key, or QUALIFIER_UNKNOWN
 */
 int enumerate_job_key(struct LibmatchCursor *cursor) {
+    int written = 0;
+    char job_key_name[JOB_KEY_NAME_LENGTH + 1] = "";
 
+    written = libmatch_read_until(cursor, job_key_name, JOB_KEY_NAME_LENGTH, ":");
+
+    /* Make sure it did not overflow. */
+    if(written >= JOB_KEY_NAME_LENGTH) {
+        fprintf(stderr, "catalyst: qualifier job key name on line %i too long\n", cursor->line + 1);
+        exit(EXIT_FAILURE);
+    }
+
+    if(strcmp(job_key_name, "name") == 0)
+        return QUALIFIER_JOB_NAME;
+
+    if(strcmp(job_key_name, "make") == 0)
+        return QUALIFIER_JOB_MAKE;
+
+    if(strcmp(job_key_name, "arguments") == 0)
+        return QUALIFIER_JOB_ARGUMENTS;
+
+    return QUALIFIER_UNKNOWN;
 }
 
 /*
@@ -365,7 +385,21 @@ struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
      * perform job line error checks.
     */
     while(end_of_qualifier(*cursor) == 0) {
+        int key = 0;
+
         error_check_qualifier_line(*cursor);
+
+        /* 4 initial spaces on each line */
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+
+        /* What kind of job key are we handling? */
+        if((key = enumerate_job_key(cursor)) == QUALIFIER_UNKNOWN) {
+            fprintf(stderr, "catalyst: unknown job qualifier key on line %i\n", cursor->line + 1);
+            exit(EXIT_FAILURE);
+        }
     }
 
     return new_job;
@@ -406,7 +440,7 @@ struct Configuration parse_configuration(const char *path) {
 
         /* What kind of qualifier are we handling? */
         if((qualifier = enumerate_qualifier(&cursor)) == QUALIFIER_UNKNOWN) {
-            fprintf(stderr, "catalyst: unknown qualifier on line %i\n", cursor.line);
+            fprintf(stderr, "catalyst: unknown qualifier on line %i\n", cursor.line + 1);
             exit(EXIT_FAILURE);
         }
 
