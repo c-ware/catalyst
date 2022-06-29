@@ -62,12 +62,12 @@ do {                                                                            
                                                                                                               \
     if(character == LIBMATCH_EOF) {                                                                           \
         fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got EOF\n", \
-               (character), (cursor)->line);                                                                  \
+               (character), (cursor)->line + 1);                                                              \
         exit(EXIT_FAILURE);                                                                                   \
     }                                                                                                         \
                                                                                                               \
     fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got '%c'\n",    \
-            (character), (cursor)->line, __NEXT_CHARACTER);                                                   \
+            (character), (cursor)->line + 1, __NEXT_CHARACTER);                                               \
     exit(EXIT_FAILURE);                                                                                       \
 } while(0)
 
@@ -141,6 +141,89 @@ void error_check_qualifier_header(struct LibmatchCursor cursor) {
      * be a space. */
     ASSERT_NEXT_CHARACTER(&cursor, ' ');
     ASSERT_NEXT_CHARACTER(&cursor, '{');
+    ASSERT_NEXT_CHARACTER(&cursor, '\n');
+}
+
+/*
+ * @docgen: function
+ * @brief: validate a line in a qualifier block
+ * @name: error_check_qualifier_line
+ *
+ * @description
+ * @This function will take the current position of the cursor inside
+ * @of a qualifier block, and validate its general format to produce
+ * @errors if it is incorrectly written.
+ * @description
+ *
+ * @notes
+ * @This function does not do any validation on the actualy data assigned
+ * @to the value of the key. When it comes to the values of the key, all it
+ * @does is check that SOMETHING is there.
+ * @notes
+ *
+ * @param cursor: the cursor to read from
+ * @type: struct LibmatchCursor
+*/
+void error_check_qualifier_line(struct LibmatchCursor cursor) {
+    int index = 0;
+    int character = -1;
+
+    /* Start of the line must have 4 pixels at the start */
+    while(index < 4) {
+        character = libmatch_cursor_getch(&cursor);
+
+        HANDLE_EOF(cursor);
+
+        if(character == ' ') {
+            index++;
+
+            continue;
+        }
+
+        fprintf(stderr, "catalyst: body line of qualifier at line %i must have 4 spaces at the start\n", cursor.line + 1);
+        exit(EXIT_FAILURE);
+    }
+
+    character = libmatch_cursor_getch(&cursor);
+    HANDLE_EOF(cursor);
+
+    /* First character after a space must be in the character class
+     * [A-Za-z_]. */
+    if(strchr(LIBMATCH_ALPHA "_", character) == NULL) {
+       fprintf(stderr, "catalyst: expected alphabetical character or underscore"
+               " after initial 4 spaces on line %i, got %c\n", cursor.line + 1,
+               character);
+       exit(EXIT_FAILURE);
+    }
+
+    /* All characters after expression ' {4}[a-zA-Z_]' must fit in
+     * the character class [a-zA-Z0-9_] until a colon is reached. */
+    while((character = libmatch_cursor_getch(&cursor)) != ':') {
+        HANDLE_EOF(cursor);
+
+        if(strchr(LIBMATCH_ALPHANUM "_", character) != NULL)
+            continue;
+
+        fprintf(stderr, "catalyst: expected alphanumerical character or underscore"
+               " after first character after initial 4 spaces on line %i, got %c\n", cursor.line + 1,
+               character);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Everything else after the colon must follow the expression:
+     * ' [^\s]' */
+    ASSERT_NEXT_CHARACTER(&cursor, ' ');
+
+    character = libmatch_cursor_getch(&cursor);
+    HANDLE_EOF(cursor);
+
+    /* Not an invalid character */
+    if(strchr(LIBMATCH_WHITESPACE, character) == NULL)
+        return;
+
+    fprintf(stderr, "catalyst: expected non-empty value to key on line %i\n",
+            cursor.line + 1);
+    exit(EXIT_FAILURE);
 }
 
 /*
@@ -186,6 +269,69 @@ int enumerate_qualifier(struct LibmatchCursor *cursor) {
     return QUALIFIER_UNKNOWN;
 }
 
+/*
+ * @docgen: function
+ * @brief: enumerate the name of a job's key
+ * @name: enumerate_job_key
+ *
+ * @description
+ * @This function will, with the cursor on the first character of
+ * @the name of the key, return an integer describing the name of
+ * @the key.
+ * @description
+ *
+ * @notes
+ * @This function expects to be in the body of a JOB, so do not
+ * @expect it to work with a testcase body.
+ * @notes
+ *
+ * @param cursor: the cursor to enumerate through
+ * @type: struct LibmatchCursor *
+ *
+ * @return: an integer describing the key, or QUALIFIER_UNKNOWN
+*/
+int enumerate_job_key(struct LibmatchCursor *cursor) {
+
+}
+
+/*
+ * @docgen: function
+ * @brief: determine if a cursor is at the end of a qualifier
+ * @name: end_of_qualifier
+ *
+ * @description
+ * @This function will determine whether or not the cursor, given
+ * @its current position, is at the end of a block.
+ * @description
+ *
+ * @notes
+ * @This function recieves a copy of the cursor, and so it will not
+ * @modify the cursor of the caller.
+ * @notes
+ *
+ * @param cursor: the cursor to check
+ * @type: struct LibmatchCursor
+ *
+ * @return: 1 if its at the end of a qualifier, and 0 if its not
+ * @type: int
+*/
+int end_of_qualifier(struct LibmatchCursor cursor) {
+    int character = -1;
+
+    character = libmatch_cursor_getch(&cursor);
+    HANDLE_EOF(cursor);
+
+    if(character == '}') {
+        character = libmatch_cursor_getch(&cursor);
+        HANDLE_EOF(cursor);
+
+        if(character == '\n')
+            return 1;
+    }
+
+    return 0;
+}
+
 struct LibmatchCursor open_cursor_stream(const char *path) {
     FILE *stream = fopen(path, "r");
     struct LibmatchCursor cursor;
@@ -197,16 +343,48 @@ struct LibmatchCursor open_cursor_stream(const char *path) {
     return cursor;
 }
 
+
+
+
+/*
+ * PARSING LOGIC
+*/
+
+struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
+    struct Job new_job;
+
+    /* Prepare for parsing */
+    INIT_VARIABLE(new_job);
+    cstring_reset(&state->line);
+
+    /* We should be 'in' the body of the job, and so on the first
+     * line of it. The actual format should have the closing brace
+     * strictly at the start of the line, and be the only character
+     * except for the new line on it. So we can detect when to stop
+     * by reading a full line, and checking if it is "}\n". Otherwise,
+     * perform job line error checks.
+    */
+    while(end_of_qualifier(*cursor) == 0) {
+        error_check_qualifier_line(*cursor);
+    }
+
+    return new_job;
+}
+
 struct Configuration parse_configuration(const char *path) {
+    struct ParserState state;
     struct LibmatchCursor cursor;
     struct Configuration configuration;
 
     liberror_is_null(parse_configuration, path);
 
+    INIT_VARIABLE(state);
     INIT_VARIABLE(cursor);
     INIT_VARIABLE(configuration);
 
+    /* Initialize stuff */
     cursor = open_cursor_stream(path);
+    state.line = cstring_init("");
 
     /* Consume the file */
     while(cursor.cursor < cursor.length) {
@@ -232,7 +410,11 @@ struct Configuration parse_configuration(const char *path) {
             exit(EXIT_FAILURE);
         }
 
+        /* Jump to next line */
+        libmatch_next_line(&cursor);
 
+        /* Decide which block to parse. */
+        parse_job(&cursor, &state);
     }
 
     return configuration;

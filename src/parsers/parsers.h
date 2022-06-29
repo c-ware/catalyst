@@ -52,6 +52,9 @@
 #define QUALIFIER_JOB       1
 #define QUALIFIER_TESTCASE  2
 
+#define QUALIFIER_JOB_NAME          1
+#define QUALIFIER_JOB_MAKE          2
+#define QUALIFIER_JOB_ARGUMENTS     3
 
 /* Data structure properties */
 
@@ -160,6 +163,18 @@ struct Configuration {
 };
 
 /*
+ * @docgen: structure
+ * @brief: data that the parser uses in the parsing process.
+ * @name: ParserState
+ *
+ * @field line: a line buffer that is reused in parsing
+ * @type: struct CString
+*/
+struct ParserState {
+    struct CString line;
+};
+
+/*
  * @docgen: function
  * @brief: parse a configuration file
  * @name: parse_configuration
@@ -184,8 +199,6 @@ struct Configuration {
 struct Configuration parse_configuration(const char *path);
 
 #endif
-
-
 
 
 
