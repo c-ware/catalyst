@@ -44,6 +44,33 @@
 
 #include "../catalyst.h"
 
+#define HANDLE_EOF(cursor)                                                                                  \
+do {                                                                                                        \
+    if((cursor).cursor != (cursor).length)                                                                  \
+        break;                                                                                              \
+                                                                                                            \
+    fprintf(stderr, "%s", "catalyst: failed to parse configuration file-- expected, character, got EOF\n"); \
+    exit(EXIT_FAILURE);                                                                                     \
+} while(0)
+
+#define ASSERT_NEXT_CHARACTER(cursor, character)                                                              \
+do {                                                                                                          \
+    int __NEXT_CHARACTER = libmatch_cursor_getch(cursor);                                                     \
+                                                                                                              \
+    if(__NEXT_CHARACTER == (character))                                                                       \
+        break;                                                                                                \
+                                                                                                              \
+    if(character == LIBMATCH_EOF) {                                                                           \
+        fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got EOF\n", \
+               (character), (cursor)->line);                                                                  \
+        exit(EXIT_FAILURE);                                                                                   \
+    }                                                                                                         \
+                                                                                                              \
+    fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got '%c'\n",    \
+            (character), (cursor)->line, __NEXT_CHARACTER);                                                   \
+    exit(EXIT_FAILURE);                                                                                       \
+} while(0)
+
 /*
  * @docgen: function
  * @brief: perform error checks on a qualifier
@@ -76,8 +103,10 @@
  * @param cursor: the cursor to validate
  * @type: struct LibmatchCursor
 */
-void error_check_qualifier(struct LibmatchCursor cursor) {
+void error_check_qualifier_header(struct LibmatchCursor cursor) {
     int character = libmatch_cursor_getch(&cursor);
+
+    HANDLE_EOF(cursor);
 
     /* First character must be in the character class [A-Za-z_] */
     if(strchr(LIBMATCH_ALPHA "_", character) == NULL) {
@@ -86,6 +115,32 @@ void error_check_qualifier(struct LibmatchCursor cursor) {
                 " or an underscore.\n", cursor.line);
         exit(EXIT_FAILURE);
     }
+
+    character = libmatch_cursor_getch(&cursor);
+
+    /* All of the characters after the first one until a colon must be
+     * alphanumeric, or an underscore. */
+    while(1) {
+        HANDLE_EOF(cursor);
+
+        if(character == ':')
+            break;
+
+        if(strchr(LIBMATCH_ALPHANUM "_", character) == NULL) {
+            fprintf(stderr, "catalyst: failed to parse configuration file-- every"
+                    " character after the start of a qualifier name on line %i"
+                    " must be alphanumerical, or an underscore.\n", cursor.line);
+            exit(EXIT_FAILURE);
+        }
+
+        character = libmatch_cursor_getch(&cursor);
+    }
+
+    /* We only get to this point if the a colon was met, so we can
+     * assume that a colon was found. Next character after it must
+     * be a space. */
+    ASSERT_NEXT_CHARACTER(&cursor, ' ');
+    ASSERT_NEXT_CHARACTER(&cursor, '{');
 }
 
 /*
@@ -111,10 +166,24 @@ void error_check_qualifier(struct LibmatchCursor cursor) {
  * @type: int
 */
 int enumerate_qualifier(struct LibmatchCursor *cursor) {
+    int written = 0;
     char qualifier_name[QUALIFIER_NAME_LENGTH + 1] = "";
 
-    libmatch_read_until(cursor, qualifier_name, QUALIFIER_NAME_LENGTH, ":");
-    printf("Qualifier name: '%s'\n", qualifier_name);
+    written = libmatch_read_until(cursor, qualifier_name, QUALIFIER_NAME_LENGTH, ":");
+
+    /* Make sure it did not overflow. */
+    if(written >= QUALIFIER_NAME_LENGTH) {
+        fprintf(stderr, "catalyst: qualifier name on line %i too long\n", cursor->line + 1);
+        exit(EXIT_FAILURE);
+    }
+
+    if(strcmp(qualifier_name, "job") == 0)
+        return QUALIFIER_JOB;
+
+    if(strcmp(qualifier_name, "testcase") == 0)
+        return QUALIFIER_TESTCASE;
+
+    return QUALIFIER_UNKNOWN;
 }
 
 struct LibmatchCursor open_cursor_stream(const char *path) {
@@ -149,14 +218,21 @@ struct Configuration parse_configuration(const char *path) {
         if(isprint(character) == 0 || character == ' ')
             continue;
 
-        /* Validate the qualifier's syntax */
-        error_check_qualifier(cursor);
+        /* Currently, the cursor is AFTER the first alphabrtical
+         * character, which makes qualifier enumeration impossible,
+         * so lets push back once. */
+        libmatch_cursor_ungetch(&cursor);
+
+        /* Validate the qualifier's opening */
+        error_check_qualifier_header(cursor);
 
         /* What kind of qualifier are we handling? */
         if((qualifier = enumerate_qualifier(&cursor)) == QUALIFIER_UNKNOWN) {
             fprintf(stderr, "catalyst: unknown qualifier on line %i\n", cursor.line);
             exit(EXIT_FAILURE);
         }
+
+
     }
 
     return configuration;

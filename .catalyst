@@ -1,6 +1,6 @@
 
 
-job: {
+job:  {
     name: "gcc"
     make: "nmake"
     arguments: "..."
