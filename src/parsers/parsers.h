@@ -47,6 +47,7 @@
 
 #define QUALIFIER_NAME_LENGTH   32 + 1
 #define JOB_KEY_NAME_LENGTH     32 + 1
+#define NUMBER_LENGTH           32 + 1
 
 /* Enumerations */
 #define QUALIFIER_UNKNOWN   0
@@ -56,6 +57,33 @@
 #define QUALIFIER_JOB_NAME          1
 #define QUALIFIER_JOB_MAKE          2
 #define QUALIFIER_JOB_ARGUMENTS     3
+
+#define HANDLE_EOF(cursor)                                                                                  \
+do {                                                                                                        \
+    if((cursor).cursor != (cursor).length)                                                                  \
+        break;                                                                                              \
+                                                                                                            \
+    fprintf(stderr, "%s", "catalyst: failed to parse configuration file-- expected, character, got EOF\n"); \
+    exit(EXIT_FAILURE);                                                                                     \
+} while(0)
+
+#define ASSERT_NEXT_CHARACTER(cursor, character)                                                              \
+do {                                                                                                          \
+    int __NEXT_CHARACTER = libmatch_cursor_getch(cursor);                                                     \
+                                                                                                              \
+    if(__NEXT_CHARACTER == (character))                                                                       \
+        break;                                                                                                \
+                                                                                                              \
+    if(character == LIBMATCH_EOF) {                                                                           \
+        fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got EOF\n", \
+               (character), (cursor)->line + 1);                                                              \
+        exit(EXIT_FAILURE);                                                                                   \
+    }                                                                                                         \
+                                                                                                              \
+    fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got '%c'\n",    \
+            (character), (cursor)->line + 1, __NEXT_CHARACTER);                                               \
+    exit(EXIT_FAILURE);                                                                                       \
+} while(0)
 
 /* Data structure properties */
 
@@ -198,6 +226,28 @@ struct ParserState {
  * @type: struct Configuration
 */
 struct Configuration parse_configuration(const char *path);
+
+/*
+ * @docgen: function
+ * @brief: parse an integer from a value
+ * @name: parse_uinteger
+ *
+ * @include: parsers.h
+ *
+ * @description
+ * @This function, with the cursor on the first digit of a number,
+ * @parse the number into a usable unsigned integer.
+ * @description
+ *
+ * @error: cursor is NULL
+ *
+ * @param cursor: the cursor to use
+ * @type: struct LibmatchCursor *
+ *
+ * @return: the parsed integer
+ * @type: unsigned int
+*/
+unsigned int parse_uinteger(struct LibmatchCursor *cursor);
 
 #endif
 

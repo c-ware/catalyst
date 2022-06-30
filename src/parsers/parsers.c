@@ -44,33 +44,6 @@
 
 #include "../catalyst.h"
 
-#define HANDLE_EOF(cursor)                                                                                  \
-do {                                                                                                        \
-    if((cursor).cursor != (cursor).length)                                                                  \
-        break;                                                                                              \
-                                                                                                            \
-    fprintf(stderr, "%s", "catalyst: failed to parse configuration file-- expected, character, got EOF\n"); \
-    exit(EXIT_FAILURE);                                                                                     \
-} while(0)
-
-#define ASSERT_NEXT_CHARACTER(cursor, character)                                                              \
-do {                                                                                                          \
-    int __NEXT_CHARACTER = libmatch_cursor_getch(cursor);                                                     \
-                                                                                                              \
-    if(__NEXT_CHARACTER == (character))                                                                       \
-        break;                                                                                                \
-                                                                                                              \
-    if(character == LIBMATCH_EOF) {                                                                           \
-        fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got EOF\n", \
-               (character), (cursor)->line + 1);                                                              \
-        exit(EXIT_FAILURE);                                                                                   \
-    }                                                                                                         \
-                                                                                                              \
-    fprintf(stderr, "catalyst: failed to parse configuration file-- expected '%c' on line %i, got '%c'\n",    \
-            (character), (cursor)->line + 1, __NEXT_CHARACTER);                                               \
-    exit(EXIT_FAILURE);                                                                                       \
-} while(0)
-
 /*
  * @docgen: function
  * @brief: perform error checks on a qualifier
@@ -225,6 +198,16 @@ void error_check_qualifier_line(struct LibmatchCursor cursor) {
             cursor.line + 1);
     exit(EXIT_FAILURE);
 }
+
+
+
+
+
+
+
+
+
+
 
 /*
  * @docgen: function
@@ -400,6 +383,11 @@ struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
             fprintf(stderr, "catalyst: unknown job qualifier key on line %i\n", cursor->line + 1);
             exit(EXIT_FAILURE);
         }
+
+        /* Go pass the space */
+        libmatch_cursor_getch(cursor);
+        parse_uinteger(cursor);
+
     }
 
     return new_job;

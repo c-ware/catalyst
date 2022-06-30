@@ -1,5 +1,5 @@
 job: {
-    name: foo
+    name: 12345
     make: "nmake"
     arguments: "..."
 }
