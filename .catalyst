@@ -1,7 +1,7 @@
 job: {
-    name: 12345
-    make: "nmake"
-    arguments: "..."
+    name: "gcc_job"
+    make: "make"
+    arguments: "foo", "bar", "baz", "tuna", "spam"
 }
 
 testcase: {

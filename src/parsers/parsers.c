@@ -386,8 +386,36 @@ struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
 
         /* Go pass the space */
         libmatch_cursor_getch(cursor);
-        parse_uinteger(cursor);
 
+        /* Parse the value */
+        switch(key) {
+            case QUALIFIER_JOB_NAME:
+                new_job.name = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+            case QUALIFIER_JOB_MAKE:
+                new_job.make_path = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+            case QUALIFIER_JOB_ARGUMENTS:
+                new_job.make_arguments = parse_string_list(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+        }
+    }
+
+    {
+        int _index = 0;
+
+        for(_index = 0; _index < carray_length(new_job.make_arguments); _index++) {
+            printf("%s\n", new_job.make_arguments->contents[_index].contents);
+        }
     }
 
     return new_job;

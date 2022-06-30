@@ -48,6 +48,7 @@
 #define QUALIFIER_NAME_LENGTH   32 + 1
 #define JOB_KEY_NAME_LENGTH     32 + 1
 #define NUMBER_LENGTH           32 + 1
+#define READ_BUFFER_LENGTH      12
 
 /* Enumerations */
 #define QUALIFIER_UNKNOWN   0
@@ -58,9 +59,9 @@
 #define QUALIFIER_JOB_MAKE          2
 #define QUALIFIER_JOB_ARGUMENTS     3
 
-#define HANDLE_EOF(cursor)                                                                                  \
+#define HANDLE_EOF(_cursor)                                                                                 \
 do {                                                                                                        \
-    if((cursor).cursor != (cursor).length)                                                                  \
+    if((_cursor).cursor != (_cursor).length)                                                                \
         break;                                                                                              \
                                                                                                             \
     fprintf(stderr, "%s", "catalyst: failed to parse configuration file-- expected, character, got EOF\n"); \
@@ -92,8 +93,8 @@ do {                                                                            
  * @brief: input to give to a test
  * @name: Testcase
  *
- * @field path[TESTCASE_PATH + 1]: the path to the test
- * @type: char
+ * @field path: the path to the test
+ * @type: struct CString
  *
  * @field argv: an array of arguments to the program
  * @type: struct CStrings *
@@ -108,7 +109,7 @@ do {                                                                            
  * @type: int
 */
 struct Testcase {
-    char path[TESTCASE_PATH + 1];
+    struct CString path;
     struct CStrings *argv;
     struct CString input;
     struct CString output;
@@ -140,18 +141,18 @@ struct Testcases {
  * @brief: a make(1) job that catalyst executes
  * @name: Job
  *
- * @field name[JOB_NAME + 1]: the name of the job
- * @type: char
+ * @field name: the name of the job
+ * @type: struct CString
  *
- * @field make_path[MAKE_PATH + 1]: the path to the make(1) binary
- * @type: char
+ * @field make_path: the path to the make(1) binary
+ * @type: struct CString
  *
  * @field make_arguments: array of arguments to pass to make(1)
  * @type: struct CStrings *
 */
 struct Job {
-    char name[JOB_NAME + 1];
-    char make_path[MAKE_PATH + 1];
+    struct CString name;
+    struct CString make_path;
     struct CStrings *make_arguments;
 };
 
@@ -249,7 +250,63 @@ struct Configuration parse_configuration(const char *path);
 */
 unsigned int parse_uinteger(struct LibmatchCursor *cursor);
 
+/*
+ * @docgen: function
+ * @brief: parse a string from a value
+ * @name: parse_string
+ *
+ * @include: parsers.h
+ *
+ * @description
+ * @This function, with the cursor on the opening quote of a string, will
+ * @parse the string into a usable cstring object. This will interpret
+ * @basic escape sequences.
+ * @description
+ *
+ * @error: cursor is NULL
+ *
+ * @param cursor: the cursor to use
+ * @type: struct LibmatchCursor *
+ *
+ * @return: the parsed cstring
+ * @type: struct CString
+*/
+struct CString parse_string(struct LibmatchCursor *cursor);
+
+/*
+ * @docgen: function
+ * @brief: parse an array of strings from a value
+ * @name: parse_string_list
+ *
+ * @include: parsers.h
+ *
+ * @description
+ * @This function, with the cursor on the opening quote of the first
+ * @string, will begin parsing an array of strings.
+ * @description
+ *
+ * @error: cursor is NULL
+ *
+ * @param cursor: the cursor to use
+ * @type: struct LibmatchCursor *
+ *
+ * @return: the parsed array of cstrings
+ * @type: struct CStrings
+*/
+struct CStrings *parse_string_list(struct LibmatchCursor *cursor);
+
 #endif
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -45,13 +45,20 @@
 
 #include "../catalyst.h"
 
+#define ADDCH_AND_CONCAT(character)             \
+    if(cursor == READ_BUFFER_LENGTH) {          \
+        cstring_concats(&new_cstring, buffer);  \
+                                                \
+        buffer[0] = '\0';                       \
+    }
+
 /*
  * @docgen: function
  * @brief: validate the syntax of an (unsigned) integer
  * @name: error_uinteger
  *
  * @description
- * @This functill will verify that an unsigned integer does not contain
+ * @This functiion will verify that an unsigned integer does not contain
  * @any illegal characters. Unsigned numbers should only contain numeric
  * @characters, and scientific notation (xEy) is also forbidden.
  * @description
@@ -59,12 +66,50 @@
  * @param cursor: the cursor to do error checking on
  * @type: struct LibmatchCursor
 */
-static void error_uinteger(struct LibmatchCursor cursor) {
+void error_uinteger(struct LibmatchCursor cursor) {
     int character = 0;
 
     while((character = libmatch_cursor_getch(&cursor)) != '\n') {
         HANDLE_EOF(cursor);
     }
+}
+
+/*
+ * @docgen: function
+ * @brief: determine whether or not to continue reading a list
+ * @name: continue_list
+ *
+ * @description
+ * @This function will determine whether or not to continue reading a
+ * @list of strings based off whether or not the current character,
+ * @and the next character is a comma (,) and space ( ) respectively.
+ * @description
+ *
+ * @param cursor: the cursor to use
+ * @type: struct LibmatchCursor
+ *
+ * @return: 1 if list parsing should continue and 0 to stop
+ * @type: int
+*/
+int continue_list(struct LibmatchCursor cursor) {
+    int character_a = 0;
+    int character_b = 0;
+
+    character_a = libmatch_cursor_getch(&cursor);
+    HANDLE_EOF(cursor);
+
+    character_b = libmatch_cursor_getch(&cursor);
+    HANDLE_EOF(cursor);
+
+    if(character_a == ',' && character_b == ' ')
+        return 1;
+
+    if(character_a == '\n')
+        return 0;
+    
+    fprintf(stderr, "catalyst: list on line %i expected ', ' before next element, got"
+            " %c%c\n", cursor.line + 1, character_a, character_b);
+    exit(EXIT_FAILURE);
 }
 
 unsigned int parse_uinteger(struct LibmatchCursor *cursor) {
@@ -98,3 +143,93 @@ unsigned int parse_uinteger(struct LibmatchCursor *cursor) {
 
     return number;
 }
+
+struct CString parse_string(struct LibmatchCursor *cursor) {
+    int character = libmatch_cursor_getch(cursor);
+    struct CString new_cstring = cstring_init("");
+
+    HANDLE_EOF(*cursor);
+
+    /* Value is missing an opening quote (0x22) */
+    if(character != '"') {
+        fprintf(stderr, "catalyst: expected start of value on line %i to be a '\"', got '%c'\n",
+                cursor->line + 1, character);
+        exit(EXIT_FAILURE);
+    }
+
+    /* Keep reading segments of the string until an unescaped " is
+     * reached. */
+    while(cursor->buffer[cursor->cursor] != '"') {
+        int index = 0;
+        int escaped = 0;
+        char buffer[READ_BUFFER_LENGTH + 1] = "";
+
+        /* Read until the buffer is full */
+        while(index < READ_BUFFER_LENGTH && cursor->buffer[cursor->cursor] != '"') {
+            character = libmatch_cursor_getch(cursor);
+
+            HANDLE_EOF(*cursor);
+
+            if(escaped == 0 && character == '\\') {
+                escaped = 1;
+
+                continue;
+            }
+
+            /* Interpret this character as the escaped form */
+            if(escaped == 1) {
+                switch(character) {
+                    case 'n':
+                        buffer[index] = '\n';
+                        break;
+                    case 'v':
+                        buffer[index] = '\v';
+                        break;
+                    case 't':
+                        buffer[index] = '\t';
+                        break;
+                }
+            } else {
+                buffer[index] = character;
+            }
+
+            index++;
+            escaped = 0;
+        }
+
+        buffer[index] = '\0';
+        cstring_concats(&new_cstring, buffer);
+    }
+
+    /* Go past the quote */
+    libmatch_cursor_getch(cursor);
+
+    return new_cstring;
+}
+
+struct CStrings *parse_string_list(struct LibmatchCursor *cursor) {
+    struct CStrings *cstring_list = carray_init(cstring_list, CSTRING);
+
+    while(cursor->cursor < cursor->length) {
+        struct CString next_string = parse_string(cursor);
+
+        carray_append(cstring_list, next_string, CSTRING);
+
+        if(continue_list(*cursor) == 0)
+            break;
+
+        /* Go past the ', ' */
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+    }
+
+    return cstring_list;
+}
+
+
+
+
+
+
+
+
