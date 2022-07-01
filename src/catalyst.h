@@ -10,6 +10,7 @@
 
 /* Configuration */
 #define CONFIGURATION_FILE  ".catalyst"
+#define TESTS_DIRECTORY     "tests"
 
 /* Useful macros */
 #define INIT_VARIABLE(v) \

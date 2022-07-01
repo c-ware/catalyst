@@ -5,7 +5,7 @@ CC=cc
 PREFIX=/usr/local
 LDFLAGS=
 LDLIBS=-lm
-CFLAGS=
+CFLAGS=-Wall -Wextra -Wpedantic -Wshadow -ansi -g
 
 all: $(OBJS) $(TESTS) catalyst
 

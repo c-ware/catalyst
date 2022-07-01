@@ -39,6 +39,41 @@
 
 #include "catalyst.h"
 
+/*
+ * @docgen: function
+ * @brief: verify the existence of all testcase binaries
+ * @name: verify_testcase_validity
+ *
+ * @description
+ * @For each test case, verify that the binary that is intended
+ * @to be executed actually exists.
+ * @description
+ *
+ * @param configuration: the configuration containing the testcases
+ * @type: struct Configuration
+*/
+void verify_testcase_validity(struct Configuration configuration) {
+    int index = 0;
+    struct CString path_string = cstring_init("");
+
+    for(index = 0; index < carray_length(configuration.testcases); index++) {
+        struct Testcase testcase = configuration.testcases->contents[index];
+
+        /* Make the path. Reset it first, though. */
+        cstring_reset(&path_string);
+        cstring_concats(&path_string, TESTS_DIRECTORY);
+        cstring_concats(&path_string, LIBPATH_SEPARATOR);
+        cstring_concat(&path_string, testcase.path);
+
+        /* Path exists-- move on. */
+        if(libpath_exists(path_string.contents) == 1)
+            continue;
+
+        fprintf(stderr, "catalys: testcase file '%s' does not exist\n", path_string.contents);
+        exit(EXIT_FAILURE);
+    }
+}
+
 void free_configuration(struct Configuration configuration) {
     int index = 0;
 
@@ -92,6 +127,8 @@ int main(int argc, char **argv) {
 
     INIT_VARIABLE(configuration);
     configuration = parse_configuration(CONFIGURATION_FILE);
+
+    verify_testcase_validity(configuration);
 
     free_configuration(configuration);
 
