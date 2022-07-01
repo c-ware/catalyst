@@ -161,7 +161,7 @@ void error_check_qualifier_line(struct LibmatchCursor cursor) {
     HANDLE_EOF(cursor);
 
     /* First character after a space must be in the character class
-     * [A-Za-z_]. */
+     * [A-Za-z0-9_]." */
     if(strchr(LIBMATCH_ALPHA "_", character) == NULL) {
        fprintf(stderr, "catalyst: expected alphabetical character or underscore"
                " after initial 4 spaces on line %i, got %c\n", cursor.line + 1,
@@ -299,6 +299,57 @@ int enumerate_job_key(struct LibmatchCursor *cursor) {
 
 /*
  * @docgen: function
+ * @brief: enumerate the name of a testcase's key
+ * @name: enumerate_testcase_key
+ *
+ * @description
+ * @This function will, with the cursor on the first character of
+ * @the name of the key, return an integer describing the name of
+ * @the key.
+ * @description
+ *
+ * @notes
+ * @This function expects to be in the body of a TESTCASE, so do not
+ * @expect it to work with a job body.
+ * @notes
+ *
+ * @param cursor: the cursor to enumerate through
+ * @type: struct LibmatchCursor *
+ *
+ * @return: an integer describing the key, or QUALIFIER_UNKNOWN
+*/
+int enumerate_testcase_key(struct LibmatchCursor *cursor) {
+    int written = 0;
+    char testcase_key_name[TESTCASE_KEY_NAME_LENGTH + 1] = "";
+
+    written = libmatch_read_until(cursor, testcase_key_name, TESTCASE_KEY_NAME_LENGTH, ":");
+
+    /* Make sure it did not overflow. */
+    if(written >= TESTCASE_KEY_NAME_LENGTH) {
+        fprintf(stderr, "catalyst: qualifier testcase key name on line %i too long\n", cursor->line + 1);
+        exit(EXIT_FAILURE);
+    }
+
+    if(strcmp(testcase_key_name, "file") == 0)
+        return QUALIFIER_TESTCASE_FILE;
+
+    if(strcmp(testcase_key_name, "argv") == 0)
+        return QUALIFIER_TESTCASE_ARGV;
+
+    if(strcmp(testcase_key_name, "stdout") == 0)
+        return QUALIFIER_TESTCASE_STDOUT;
+
+    if(strcmp(testcase_key_name, "stdin") == 0)
+        return QUALIFIER_TESTCASE_STDIN;
+
+    if(strcmp(testcase_key_name, "timeout") == 0)
+        return QUALIFIER_TESTCASE_TIMEOUT;
+
+    return QUALIFIER_UNKNOWN;
+}
+
+/*
+ * @docgen: function
  * @brief: determine if a cursor is at the end of a qualifier
  * @name: end_of_qualifier
  *
@@ -326,9 +377,8 @@ int end_of_qualifier(struct LibmatchCursor cursor) {
 
     if(character == '}') {
         character = libmatch_cursor_getch(&cursor);
-        HANDLE_EOF(cursor);
 
-        if(character == '\n')
+        if(character == '\n' || character == LIBMATCH_EOF)
             return 1;
     }
 
@@ -410,15 +460,79 @@ struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
         }
     }
 
-    {
-        int _index = 0;
+    return new_job;
+}
 
-        for(_index = 0; _index < carray_length(new_job.make_arguments); _index++) {
-            printf("%s\n", new_job.make_arguments->contents[_index].contents);
+struct Testcase parse_testcase(struct LibmatchCursor *cursor, struct ParserState *state) {
+    struct Testcase new_testcase;
+
+
+    /* Prepare for parsing */
+    INIT_VARIABLE(new_testcase);
+    cstring_reset(&state->line);
+
+    /* We should be 'in' the body of the job, and so on the first
+     * line of it. The actual format should have the closing brace
+     * strictly at the start of the line, and be the only character
+     * except for the new line on it. So we can detect when to stop
+     * by reading a full line, and checking if it is "}\n". Otherwise,
+     * perform job line error checks.
+    */
+    while(end_of_qualifier(*cursor) == 0) {
+        int key = 0;
+
+        error_check_qualifier_line(*cursor);
+
+        /* 4 initial spaces on each line */
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+        libmatch_cursor_getch(cursor);
+
+        /* What kind of testcase key are we handling? */
+        if((key = enumerate_testcase_key(cursor)) == QUALIFIER_UNKNOWN) {
+            fprintf(stderr, "catalyst: unknown testcase qualifier key on line %i\n", cursor->line + 1);
+            exit(EXIT_FAILURE);
+        }
+
+        /* Go pass the space */
+        libmatch_cursor_getch(cursor);
+
+        /* Parse the value */
+        switch(key) {
+            case QUALIFIER_TESTCASE_FILE:
+                new_testcase.path = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+
+            case QUALIFIER_TESTCASE_ARGV:
+                new_testcase.argv = parse_string_list(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+            case QUALIFIER_TESTCASE_STDIN:
+                new_testcase.input = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+            case QUALIFIER_TESTCASE_STDOUT:
+                new_testcase.output = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+            case QUALIFIER_TESTCASE_TIMEOUT:
+                new_testcase.timeout = parse_uinteger(cursor);
+
+                break;
         }
     }
 
-    return new_job;
+    return new_testcase;
 }
 
 struct Configuration parse_configuration(const char *path) {
@@ -433,13 +547,16 @@ struct Configuration parse_configuration(const char *path) {
     INIT_VARIABLE(configuration);
 
     /* Initialize stuff */
-    cursor = open_cursor_stream(path);
     state.line = cstring_init("");
+    cursor = open_cursor_stream(path);
+    configuration.jobs = carray_init(configuration.jobs, JOB);
+    configuration.testcases = carray_init(configuration.testcases, TESTCASE);
 
     /* Consume the file */
     while(cursor.cursor < cursor.length) {
         int qualifier = 0;
         int character = libmatch_cursor_getch(&cursor);
+
 
         /* Keep going until a printable character is found. Also, 0x20
          * is printable for some reason..? */
@@ -464,8 +581,28 @@ struct Configuration parse_configuration(const char *path) {
         libmatch_next_line(&cursor);
 
         /* Decide which block to parse. */
-        parse_job(&cursor, &state);
+        if(qualifier == QUALIFIER_TESTCASE) {
+            struct Testcase new_testcase = parse_testcase(&cursor, &state);
+
+            carray_append(configuration.testcases, new_testcase, TESTCASE);
+        } else if(qualifier == QUALIFIER_JOB) {
+            struct Job new_job = parse_job(&cursor, &state);
+
+            carray_append(configuration.jobs, new_job, JOB);
+        }
+
+        /* Go past the '}\n' */
+        libmatch_cursor_getch(&cursor);
+        libmatch_cursor_getch(&cursor);
     }
+
+    cstring_free(state.line);
+    libmatch_cursor_free(&cursor);
 
     return configuration;
 }
+
+/*
+
+        printf("Character: '%c'\n", cursor.buffer[cursor.cursor]);
+        */

@@ -45,10 +45,11 @@
 #define JOB_NAME        32 + 1
 #define MAKE_PATH       128 + 1
 
-#define QUALIFIER_NAME_LENGTH   32 + 1
-#define JOB_KEY_NAME_LENGTH     32 + 1
-#define NUMBER_LENGTH           32 + 1
-#define READ_BUFFER_LENGTH      12
+#define QUALIFIER_NAME_LENGTH       32 + 1
+#define JOB_KEY_NAME_LENGTH         32 + 1
+#define TESTCASE_KEY_NAME_LENGTH    32 + 1
+#define NUMBER_LENGTH               32 + 1
+#define READ_BUFFER_LENGTH          12
 
 /* Enumerations */
 #define QUALIFIER_UNKNOWN   0
@@ -59,13 +60,27 @@
 #define QUALIFIER_JOB_MAKE          2
 #define QUALIFIER_JOB_ARGUMENTS     3
 
-#define HANDLE_EOF(_cursor)                                                                                 \
-do {                                                                                                        \
-    if((_cursor).cursor != (_cursor).length)                                                                \
-        break;                                                                                              \
-                                                                                                            \
-    fprintf(stderr, "%s", "catalyst: failed to parse configuration file-- expected, character, got EOF\n"); \
-    exit(EXIT_FAILURE);                                                                                     \
+#define QUALIFIER_TESTCASE_FILE         1
+#define QUALIFIER_TESTCASE_ARGV         2
+#define QUALIFIER_TESTCASE_STDOUT       3
+#define QUALIFIER_TESTCASE_STDIN        4
+#define QUALIFIER_TESTCASE_TIMEOUT      5
+
+/* Data structure properties */
+#define TESTCASE_TYPE   struct Testcase
+#define TESTCASE_HEAP   1
+
+#define JOB_TYPE   struct Job
+#define JOB_HEAP   1
+
+#define HANDLE_EOF(_cursor)                                                                                    \
+do {                                                                                                           \
+    if((_cursor).cursor != (_cursor).length)                                                                   \
+        break;                                                                                                 \
+                                                                                                               \
+    fprintf(stderr, "catalyst: failed to parse configuration file-- expected character on line %i, got EOF"    \
+            " (%s:%i)\n", (_cursor).line + 1, __FILE__, __LINE__);                                             \
+    exit(EXIT_FAILURE);                                                                                        \
 } while(0)
 
 #define ASSERT_NEXT_CHARACTER(cursor, character)                                                              \
@@ -85,8 +100,6 @@ do {                                                                            
             (character), (cursor)->line + 1, __NEXT_CHARACTER);                                               \
     exit(EXIT_FAILURE);                                                                                       \
 } while(0)
-
-/* Data structure properties */
 
 /*
  * @docgen structure
@@ -168,12 +181,12 @@ struct Job {
  * @type: int
  *
  * @field contents: the jobs in the array
- * @type: struct Jobs *
+ * @type: struct Job *
 */
 struct Jobs {
     int length;
     int capacity;
-    struct Jobs *contents;
+    struct Job *contents;
 };
 
 /*
@@ -182,14 +195,14 @@ struct Jobs {
  * @name: Configuration
  *
  * @field jobs: the parsed jobs
- * @type: struct Jobs
+ * @type: struct Jobs *
  *
  * @field testcases: the parsed testcases
- * @type: struct Testcases
+ * @type: struct Testcases *
 */
 struct Configuration {
-    struct Jobs jobs;
-    struct Testcases testcases;
+    struct Jobs *jobs;
+    struct Testcases *testcases;
 };
 
 /*
