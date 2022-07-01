@@ -39,17 +39,8 @@
 
 #include "catalyst.h"
 
-int main(int argc, char **argv) {
+void free_configuration(struct Configuration configuration) {
     int index = 0;
-    struct Configuration configuration;
-
-    if(libpath_exists(CONFIGURATION_FILE) == 0) {
-        fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
-        exit(EXIT_FAILURE);
-    }
-
-    INIT_VARIABLE(configuration);
-    configuration = parse_configuration(CONFIGURATION_FILE);
 
     /* Release the jobs */
     for(index = 0; index < carray_length(configuration.jobs); index++) {
@@ -89,6 +80,20 @@ int main(int argc, char **argv) {
 
     free(configuration.testcases->contents);
     free(configuration.testcases);
+}
+
+int main(int argc, char **argv) {
+    struct Configuration configuration;
+
+    if(libpath_exists(CONFIGURATION_FILE) == 0) {
+        fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
+        exit(EXIT_FAILURE);
+    }
+
+    INIT_VARIABLE(configuration);
+    configuration = parse_configuration(CONFIGURATION_FILE);
+
+    free_configuration(configuration);
 
     return EXIT_SUCCESS;
 }
