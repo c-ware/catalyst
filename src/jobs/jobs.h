@@ -35,65 +35,75 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <stdlib.h>
+#ifndef CWARE_CATALYST_JOBS_H
+#define CWARE_CATALYST_JOBS_H
 
-#include "catalyst.h"
+/*
+ * @docgen: structure
+ * @brief: pair of pipes for reading and writing
+ * @name: PipePair
+ *
+ * @field read: the pipe to read from
+ * @type: int
+ *
+ * @field write: the pipe to write to
+ * @type: int
+*/
+struct PipePair {
+    int read;
+    int write;
+};
 
-void free_configuration(struct Configuration configuration) {
-    int index = 0;
+/*
+ * @docgen: structure
+ * @brief: array of pipes
+ * @name: PipePairs
+ *
+ * @field length: the length of the array
+ * @type: int
+ *
+ * @field capacity: the capacity of the array
+ * @type: int
+ *
+ * @field contents: the pipes in the array
+ * @type: struct PipePair
+*/
+struct PipePairs {
+    int length;
+    int capacity;
+    struct PipePair *contents;
+};
 
-    /* Release the jobs */
-    for(index = 0; index < carray_length(configuration.jobs); index++) {
-        int array_index = 0;
-        struct Job job = configuration.jobs->contents[index];
+/*
+ * @docgen: structure
+ * @brief: an array of integers
+ * @name: IntArray
+ *
+ * @field length: the length of the array
+ * @type: int
+ *
+ * @field capacity: the capacity of the array
+ * @type: int
+ *
+ * @field contents: the pollfds in the array
+ * @type: struct pollfd *
+*/
+struct Pollfds {
+    int length;
+    int capacity;
+    struct pollfd *contents;
+};
 
-        cstring_free(job.name);
-        cstring_free(job.make_path);
+/* Data structure properties */
+#define PIPE_PAIR_TYPE  struct PipePair
+#define PIPE_PAIR_HEAP  1
+#define PIPE_PAIR_FREE(value) \
+    close((value).read);      \
+    close((value).write)
 
-        for(array_index = 0; array_index < carray_length(job.make_arguments); array_index++) {
-            cstring_free(job.make_arguments->contents[array_index]);
-        }
+#define POLLFD_TYPE  struct pollfd
+#define POLLFD_HEAP  1
+#define POLLFD_FREE(value)
 
-        free(job.make_arguments->contents);
-        free(job.make_arguments);
-    }
 
-    free(configuration.jobs->contents);
-    free(configuration.jobs);
-
-    /* Release the test cases */
-    for(index = 0; index < carray_length(configuration.testcases); index++) {
-        int array_index = 0;
-        struct Testcase testcase = configuration.testcases->contents[index];
-
-        cstring_free(testcase.path);
-        cstring_free(testcase.input);
-        cstring_free(testcase.output);
-
-        for(array_index = 0; array_index < carray_length(testcase.argv); array_index++) {
-            cstring_free(testcase.argv->contents[array_index]);
-        }
-
-        free(testcase.argv->contents);
-        free(testcase.argv);
-    }
-
-    free(configuration.testcases->contents);
-    free(configuration.testcases);
-}
-
-int main(int argc, char **argv) {
-    struct Configuration configuration;
-
-    if(libpath_exists(CONFIGURATION_FILE) == 0) {
-        fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
-        exit(EXIT_FAILURE);
-    }
-
-    configuration = parse_configuration(CONFIGURATION_FILE);
-    handle_jobs(configuration);
-
-    free_configuration(configuration);
-
-    return EXIT_SUCCESS;
-}
+#endif
