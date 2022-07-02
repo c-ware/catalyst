@@ -38,6 +38,9 @@
 #ifndef CWARE_CATALYST_JOBS_H
 #define CWARE_CATALYST_JOBS_H
 
+#define PROCESS_CHECK_TIMEOUT   500
+#define PROCESS_RESPONSE_LENGTH 2048 + 1
+
 /*
  * @docgen: structure
  * @brief: pair of pipes for reading and writing

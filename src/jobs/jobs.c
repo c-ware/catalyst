@@ -86,6 +86,7 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
 
 void handle_jobs(struct Configuration configuration) {
     int index = 0;
+    int responses = 0;
     struct PipePairs *pipes = NULL;
     struct Pollfds *descriptors = NULL;
 
@@ -131,13 +132,29 @@ void handle_jobs(struct Configuration configuration) {
         carray_append(descriptors, poll_segment, POLLFD);
     }
 
-    /* Display infrastructure (debugging) */
+    /* Wait until all processes have completed their jobs */
+    while(responses != carray_length(descriptors)) {
+        responses = poll(descriptors->contents, carray_length(descriptors), PROCESS_CHECK_TIMEOUT);
+
+        if(responses > 0) 
+            continue;
+
+        /* Stop-- error time */
+        abort();
+    }
+
+    /* Read all responses */
     for(index = 0; index < carray_length(pipes); index++) {
-        printf("Pipe: %i\n", index);
-        printf("\tRead: %i\n", pipes->contents[index].read);
-        printf("\tWrite: %i\n", pipes->contents[index].write);
+        char response[PROCESS_RESPONSE_LENGTH + 1] = "";
+
+        /* Read the response */
+        INIT_VARIABLE(response);
+        read(pipes->contents[index].read, response, PROCESS_RESPONSE_LENGTH);
+
+        printf("%s\n", response);
     }
 
     /* File descriptors are closed in the pipe array releasing function */
     carray_free(pipes, PIPE_PAIR);
+    carray_free(descriptors, POLLFD);
 }
