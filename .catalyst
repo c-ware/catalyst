@@ -19,3 +19,11 @@ testcase: {
     stdout: "foo bar baz\ntuna spam thud\nwaldo quz buzz\n"
     timeout: 500
 }
+
+testcase: {
+    file: "test_a"
+    argv: "foo", "bar", "baz"
+    stdin: "hi i am writing this to your stdin"
+    stdout: "foo bar baz\ntuna spam thud\nwaldo quz buzz\n"
+    timeout: 500
+}

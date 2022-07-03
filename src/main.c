@@ -42,9 +42,10 @@
 #include "catalyst.h"
 
 void handle_sigchild(int x) {
-    int wstatus = 0;
+    wait(NULL);
 
-    wait(&wstatus);
+    /* Reinstall signal handler because UNIX sucks */
+    signal(SIGCHLD, handle_sigchild);
 }
 
 void free_configuration(struct Configuration configuration) {
@@ -104,6 +105,8 @@ int main(int argc, char **argv) {
     handle_jobs(configuration);
 
     free_configuration(configuration);
+
+    while(1) {}
 
     return EXIT_SUCCESS;
 }
