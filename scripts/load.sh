@@ -6,3 +6,6 @@ makegen project unix --binary catalyst --main src/main.c \
 
 makegen project unix --binary catalyst --main src/main.c \
                      --ldlibs '\-lm' --cflags '\-Wall -Wextra -Wpedantic -Wshadow -ansi -g' > Makefile.dev
+
+# Make gitignore
+m4 template/.gitignore > .gitignore

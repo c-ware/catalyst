@@ -1,4 +1,4 @@
-
+changequote(<,>)
 
 # Prerequisites
 *.d
@@ -55,5 +55,4 @@ dkms.conf
 
 # Catalyst stuff
 catalyst
-tests/test_a
-
+syscmd(<find tests -type f | tr ' ' '\n' | grep -v '\..\+$'>)

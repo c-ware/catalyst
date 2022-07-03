@@ -41,8 +41,10 @@
 
 #include <poll.h>
 #include <errno.h>
+#include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include "jobs.h"
 #include "../catalyst.h"
@@ -128,13 +130,18 @@ void verify_testcase_validity(struct Configuration configuration) {
 }
 
 void test_runner(struct Testcase testcase, struct PipePair pair) {
+    int pid = 0;
     int index = 0;
-    int pid = fork();
+    int exit_code = 0;
+
+    /* Disable signal handling in the test runner and the test! (in the test
+     * until the process image is replaced, at least.) */
+    signal(SIGCHLD, SIG_DFL);
 
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
      * to the process image replacement. */
-    if(pid == 0) {
+    if((pid = fork()) == 0) {
         char **argv = NULL;
         struct CString test_path = cstring_init(TESTS_DIRECTORY);
 
@@ -158,6 +165,17 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
         /* Lock and load */
         execv(test_path.contents, argv);
     }
+    
+    /* Wait for a timeout */
+    if(testcase.timeout != 0) {
+        /* WIP */
+
+        return; 
+    }
+
+    /* Wait for the child process to quit, and extract the exit code */
+    wait(&exit_code);
+    printf("Process %i exited with %i\n", pid, WEXITSTATUS(exit_code));
 }
 
 void handle_jobs(struct Configuration configuration) {
