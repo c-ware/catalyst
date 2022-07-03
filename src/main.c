@@ -35,9 +35,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <signal.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 
 #include "catalyst.h"
+
+void handle_sigchild(int x) {
+    int wstatus = 0;
+
+    wait(&wstatus);
+}
 
 void free_configuration(struct Configuration configuration) {
     int index = 0;
@@ -84,6 +92,8 @@ void free_configuration(struct Configuration configuration) {
 
 int main(int argc, char **argv) {
     struct Configuration configuration;
+
+    signal(SIGCHLD, handle_sigchild);
 
     if(libpath_exists(CONFIGURATION_FILE) == 0) {
         fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);

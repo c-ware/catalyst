@@ -40,6 +40,8 @@
 */
 
 #include <poll.h>
+#include <errno.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "jobs.h"
@@ -81,7 +83,7 @@ void verify_testcase_validity(struct Configuration configuration) {
 }
 
 void test_runner(struct Testcase testcase, struct PipePair pair) {
-    write(pair.write, "foo", 4);
+    write(pair.write, "foo", 4);    
 }
 
 void handle_jobs(struct Configuration configuration) {
@@ -139,8 +141,16 @@ void handle_jobs(struct Configuration configuration) {
         if(responses > 0) 
             continue;
 
-        /* Stop-- error time */
-        abort();
+        /* Interruption- This is an unavoidable error at times, so
+         * keep going. */
+        if(errno == EINTR) {
+            errno = 0;
+
+            continue;
+        }
+
+        /* Stop-- error time  */
+        liberror_failure(handle_jobs, poll);
     }
 
     /* Read all responses */
