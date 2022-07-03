@@ -48,65 +48,20 @@ void handle_sigchild(int x) {
     signal(SIGCHLD, handle_sigchild);
 }
 
-void free_configuration(struct Configuration configuration) {
-    int index = 0;
-
-    /* Release the jobs */
-    for(index = 0; index < carray_length(configuration.jobs); index++) {
-        int array_index = 0;
-        struct Job job = configuration.jobs->contents[index];
-
-        cstring_free(job.name);
-        cstring_free(job.make_path);
-
-        for(array_index = 0; array_index < carray_length(job.make_arguments); array_index++) {
-            cstring_free(job.make_arguments->contents[array_index]);
-        }
-
-        free(job.make_arguments->contents);
-        free(job.make_arguments);
-    }
-
-    free(configuration.jobs->contents);
-    free(configuration.jobs);
-
-    /* Release the test cases */
-    for(index = 0; index < carray_length(configuration.testcases); index++) {
-        int array_index = 0;
-        struct Testcase testcase = configuration.testcases->contents[index];
-
-        cstring_free(testcase.path);
-        cstring_free(testcase.input);
-        cstring_free(testcase.output);
-
-        for(array_index = 0; array_index < carray_length(testcase.argv); array_index++) {
-            cstring_free(testcase.argv->contents[array_index]);
-        }
-
-        free(testcase.argv->contents);
-        free(testcase.argv);
-    }
-
-    free(configuration.testcases->contents);
-    free(configuration.testcases);
-}
-
-int main(int argc, char **argv) {
+int main(void) {
     struct Configuration configuration;
-
-    signal(SIGCHLD, handle_sigchild);
 
     if(libpath_exists(CONFIGURATION_FILE) == 0) {
         fprintf(stderr, "catalyst: could not find configuration file '%s'\n", CONFIGURATION_FILE);
         exit(EXIT_FAILURE);
     }
 
+    signal(SIGCHLD, handle_sigchild);
+
     configuration = parse_configuration(CONFIGURATION_FILE);
+
     handle_jobs(configuration);
-
     free_configuration(configuration);
-
-    while(1) {}
 
     return EXIT_SUCCESS;
 }

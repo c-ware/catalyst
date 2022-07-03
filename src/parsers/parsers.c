@@ -466,7 +466,6 @@ struct Job parse_job(struct LibmatchCursor *cursor, struct ParserState *state) {
 struct Testcase parse_testcase(struct LibmatchCursor *cursor, struct ParserState *state) {
     struct Testcase new_testcase;
 
-
     /* Prepare for parsing */
     INIT_VARIABLE(new_testcase);
     cstring_reset(&state->line);
@@ -556,7 +555,6 @@ struct Configuration parse_configuration(const char *path) {
     while(cursor.cursor < cursor.length) {
         int qualifier = 0;
         int character = libmatch_cursor_getch(&cursor);
-
 
         /* Keep going until a printable character is found. Also, 0x20
          * is printable for some reason..? */

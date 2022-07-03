@@ -47,6 +47,49 @@
 #include "jobs.h"
 #include "../catalyst.h"
 
+void free_configuration(struct Configuration configuration) {
+    int index = 0;
+
+    /* Release the jobs */
+    for(index = 0; index < carray_length(configuration.jobs); index++) {
+        int array_index = 0;
+        struct Job job = configuration.jobs->contents[index];
+
+        cstring_free(job.name);
+        cstring_free(job.make_path);
+
+        for(array_index = 0; array_index < carray_length(job.make_arguments); array_index++) {
+            cstring_free(job.make_arguments->contents[array_index]);
+        }
+
+        free(job.make_arguments->contents);
+        free(job.make_arguments);
+    }
+
+    free(configuration.jobs->contents);
+    free(configuration.jobs);
+
+    /* Release the test cases */
+    for(index = 0; index < carray_length(configuration.testcases); index++) {
+        int array_index = 0;
+        struct Testcase testcase = configuration.testcases->contents[index];
+
+        cstring_free(testcase.path);
+        cstring_free(testcase.input);
+        cstring_free(testcase.output);
+
+        for(array_index = 0; array_index < carray_length(testcase.argv); array_index++) {
+            cstring_free(testcase.argv->contents[array_index]);
+        }
+
+        free(testcase.argv->contents);
+        free(testcase.argv);
+    }
+
+    free(configuration.testcases->contents);
+    free(configuration.testcases);
+}
+
 /*
  * @docgen: function
  * @brief: verify the existence of all testcase binaries
@@ -80,10 +123,41 @@ void verify_testcase_validity(struct Configuration configuration) {
         fprintf(stderr, "catalys: testcase file '%s' does not exist\n", path_string.contents);
         exit(EXIT_FAILURE);
     }
+
+    cstring_free(path_string);
 }
 
 void test_runner(struct Testcase testcase, struct PipePair pair) {
-    write(pair.write, "foo", 4);    
+    int index = 0;
+    int pid = fork();
+
+    /* Prepare the child process (will become the test). Should be noted that
+     * all allocations under this block will not need to be released due
+     * to the process image replacement. */
+    if(pid == 0) {
+        char **argv = NULL;
+        struct CString test_path = cstring_init(TESTS_DIRECTORY);
+
+        /* Build the path to the testcase */
+        cstring_concats(&test_path, LIBPATH_SEPARATOR);
+        cstring_concat(&test_path, testcase.path);
+
+        /* Prepare the argv (+1 for NULL at the end of the array, and
+         * inserting at 0 for the path to the test */
+        carray_insert(testcase.argv, 0, test_path, CSTRING);
+        argv = malloc((carray_length(testcase.argv) + 1) * sizeof(char *));
+
+        /* Extract pointers to all the contents of each argument */
+        for(index = 0; index < carray_length(testcase.argv); index++) {
+            argv[index] = testcase.argv->contents[index].contents;
+        }
+
+        /* NULL so that execv can work on the array */
+        argv[index] = NULL;
+
+        /* Lock and load */
+        execv(test_path.contents, argv);
+    }
 }
 
 void handle_jobs(struct Configuration configuration) {
@@ -120,8 +194,15 @@ void handle_jobs(struct Configuration configuration) {
         /* Let the test runner do its thing. */
         switch(fork()) {
             case 0: 
-                /* Test runner has access to its r/w pipes */
+                /* Test runner has access to a bunch of stuff due to
+                 * the need to release heap memory, and access IPC
+                 * interfaces. */
                 test_runner(configuration.testcases->contents[index], pair);
+                
+                /* Cleanup the cloned memory */
+                free_configuration(configuration);
+                carray_free(pipes, PIPE_PAIR);
+                carray_free(descriptors, POLLFD);
 
                 exit(EXIT_SUCCESS);
             case -1:
