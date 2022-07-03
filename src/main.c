@@ -44,8 +44,6 @@
 void handle_sigchild(int x) {
     wait(NULL);
 
-    printf("Process ended.\n");
-
     /* Reinstall signal handler because UNIX sucks */
     signal(SIGCHLD, handle_sigchild);
 }

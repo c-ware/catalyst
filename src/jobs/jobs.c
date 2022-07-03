@@ -40,6 +40,7 @@
 */
 
 #include <poll.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <signal.h>
 #include <string.h>
@@ -48,6 +49,9 @@
 
 #include "jobs.h"
 #include "../catalyst.h"
+
+#define PIPE_READ   0
+#define PIPE_WRITE  1
 
 void free_configuration(struct Configuration configuration) {
     int index = 0;
@@ -133,17 +137,22 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;
     int index = 0;
     int exit_code = 0;
+    int pipes[2] = {0, 0};
 
     /* Disable signal handling in the test runner and the test! (in the test
      * until the process image is replaced, at least.) */
     signal(SIGCHLD, SIG_DFL);
+    pipe(pipes);
+
 
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
      * to the process image replacement. */
     if((pid = fork()) == 0) {
+        int flags = 0;
         char **argv = NULL;
         struct CString test_path = cstring_init(TESTS_DIRECTORY);
+        char path[1204] = "";
 
         /* Build the path to the testcase */
         cstring_concats(&test_path, LIBPATH_SEPARATOR);
@@ -162,8 +171,21 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
         /* NULL so that execv can work on the array */
         argv[index] = NULL;
 
-        /* Lock and load */
+        /* Prepare for and execute the test */
+        close(0);
+        dup(pipes[0]);
+
+        /* Make stdin pipe not block */
+        flags = fcntl(pipes[0], F_GETFL, 0);
+        flags |= O_NONBLOCK;
+        fcntl(pipes[0], F_SETFL, flags);
+
         execv(test_path.contents, argv);
+    }
+
+    /* Write the stdin to the pipe if there is any to write */
+    if(testcase.input.contents != NULL) {
+        write(pipes[1], "Hello, world!\n", strlen("Hello, world!\n"));
     }
     
     /* Wait for a timeout */
