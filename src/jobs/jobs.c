@@ -222,17 +222,29 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
          * it gets worse. We now enter the area of having to use fcntl to allow
          * for non-blocking I/O.
          *
-         * From what I can tell, the read system call has special behavior when
-         * reading from a controlling terminal. Pipes are not a terminal, and
-         * despite my attempts to emulate how Bash handles pipes, it seems I
-         * cannot figure out how.
-         *
          * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
          * like fgetc will continue to infinitely block when there is no more
          * data there, not sure why. To replicate Bash not spawning a pipe when
-         * there is no pipe (for the sake of people's expectations of what will
+         * there is no  (for the sake of people's expectations of what will
          * happen when trying to fgetc in a test with no stdin expected), a pipe
-         * will not be created unless input is expected.
+         * will not be created unless input is expected. We also do this because
+         * it might be better to just have it block than silently have fgetc
+         * return -1, not sure, we will see.
+         *
+         * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
+         * like fgetc will continue to infinitely block when there is no more
+         * data there, not sure why. Something this code originally did was it
+         * would open a pipe to stdin regardless of whether or not there was
+         * actually data to read.
+         *
+         * This both causes a waste of file descriptor space, and can
+         * potentially cause bugs in existing programs which rely on having an
+         * infinite pause when there is no pipe setup. The infinite pause is,
+         * as far as I can tell, caused by the child process inheriting the
+         * stdin of the parent process, and not modifying it to use a pipe
+         * due to not having any actual data to read. When stdin is still
+         * connected to a terminal, then as far as I can tell, read will have
+         * special reading behavior for terminals, and will just pause forever.
         */
 
         if(testcase.input.contents != NULL) {
