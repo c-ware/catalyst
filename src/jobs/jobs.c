@@ -142,8 +142,11 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
     /* Disable signal handling in the test runner and the test! (in the test
      * until the process image is replaced, at least.) */
     signal(SIGCHLD, SIG_DFL);
-    pipe(pipes);
 
+    /* Only prepare pipes if, and only if there is input to
+     * that the test should expect, please. */
+    if(testcase.input.contents != NULL)
+        pipe(pipes);
 
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
@@ -217,32 +220,29 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
          *
          * Now that is a lot of text to explain two lines of code, but trust me
          * it gets worse. We now enter the area of having to use fcntl to allow
-         * for *buffered input.*
+         * for non-blocking I/O.
          *
-         * Something to understand the standard streams is that according to
-         * the C standard, stdin, stderr, and stdout will always be unbuffered
-         * if, and only if, it is connected to an interactive device (e.g a
-         * terminal.) Because of this, when we close stdin and replace it,
-         * which in this case, we are replacing it with a pipe file descriptor
-         * (pipes are buffered), for a currently unknown reason to me (if I had
-         * to guess, its because close might not turn off settings), the
-         * settings that were originally tuned for an interactive device stick.
+         * From what I can tell, the read system call has special behavior when
+         * reading from a controlling terminal. Pipes are not a terminal, and
+         * despite my attempts to emulate how Bash handles pipes, it seems I
+         * cannot figure out how.
          *
-         * This is a problem because it causes functions like fread or fgetc
-         * to infinitely yield when there is nothing more to read. In a normal
-         * situation for other files, which are buffered by default, if there
-         * is no more data to be read, the function does not block and will
-         * simply return in the case of something such as fgetc. To fix this,
-         * all we must do is use fcntl and toggle the file descriptor's
-         * non-blocking setting.
+         * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
+         * like fgetc will continue to infinitely block when there is no more
+         * data there, not sure why. To replicate Bash not spawning a pipe when
+         * there is no pipe (for the sake of people's expectations of what will
+         * happen when trying to fgetc in a test with no stdin expected), a pipe
+         * will not be created unless input is expected.
         */
 
-        close(0);
-        dup(pipes[0]);
+        if(testcase.input.contents != NULL) {
+            close(0);
+            dup(pipes[0]);
 
-        flags = fcntl(pipes[0], F_GETFL, 0);
-        flags |= O_NONBLOCK;
-        fcntl(pipes[0], F_SETFL, flags);
+            flags = fcntl(pipes[0], F_GETFL, 0);
+            flags |= O_NONBLOCK;
+            fcntl(pipes[0], F_SETFL, flags);
+        }
 
         execv(test_path.contents, argv);
     }
