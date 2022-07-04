@@ -171,11 +171,75 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
         /* NULL so that execv can work on the array */
         argv[index] = NULL;
 
-        /* Prepare for and execute the test */
+        /* Oh boy. This section has to be the single most confusing part in
+         * this entire program. This might take a little bit to explain.
+         *
+         * So to start, let's remember the purpose of this function.
+         * This function, which is spawned by handle_jobs, serves the
+         * purpose of running an individual test.
+         *
+         * Part of running a test involves, among other things, writing
+         * input into the test's stdin to make sure it produces the expected
+         * output. This might seem simple at first, and it actually kind of
+         * is *initially.* In order to communicate with the child process,
+         * we must first steup a method of communication. The standard UNIX
+         * approach is to use pipes for this kind of logic, and that is what
+         * we do.
+         *
+         * Now, as I am sure you know, the pipe() function will create a write,
+         * and read end of the pipe. We want the subprocess to read from the
+         * end of the pipe, so that we can pipe data through it-- effectively
+         * making a 'new' standard input stream so to speak.
+         *
+         * To do this, we must first understand how UNIX internally handles
+         * file descriptors. Internally, there is a table of allocated file
+         * descriptors for a process that, as new files are opened, get
+         * assigned to whatever file descriptor is closest to the start of
+         * the list.
+         *
+         * Because of this behavior, this means that when you close a file
+         * descriptor, assuming all file descriptor slots below it are being
+         * used, it can then be 'refilled' with a new file descriptor. We can
+         * exploit this behavior to essentially assign a new file to the stdn.
+         *
+         * Under POSIX, the standard streams have 'reserved' file descriptors
+         * in the sense that the libc should respect that STDIN_FILENO (which
+         * is 0 under POSIX) will always be treated as the file descriptor of
+         * the stdin stream.
+         * 
+         * This means, that if we close the file descriptor STDIN_FILENO, which
+         * is quite literally the first expected file descriptor, it will
+         * become available to be overwritten. This will allow us to 'change'
+         * the file mapped to file descriptor 0 by duplicating the read end of
+         * the pipe with dup(2), which will create a NEW file descriptor at the
+         * closest unused slot to the start of the table, which is mapped to
+         * the same file as the read end of the pipe.
+         *
+         * Now that is a lot of text to explain two lines of code, but trust me
+         * it gets worse. We now enter the area of having to use fcntl to allow
+         * for *buffered input.*
+         *
+         * Something to understand the standard streams is that according to
+         * the C standard, stdin, stderr, and stdout will always be unbuffered
+         * if, and only if, it is connected to an interactive device (e.g a
+         * terminal.) Because of this, when we close stdin and replace it,
+         * which in this case, we are replacing it with a pipe file descriptor
+         * (pipes are buffered), for a currently unknown reason to me (if I had
+         * to guess, its because close might not turn off settings), the
+         * settings that were originally tuned for an interactive device stick.
+         *
+         * This is a problem because it causes functions like fread or fgetc
+         * to infinitely yield when there is nothing more to read. In a normal
+         * situation for other files, which are buffered by default, if there
+         * is no more data to be read, the function does not block and will
+         * simply return in the case of something such as fgetc. To fix this,
+         * all we must do is use fcntl and toggle the file descriptor's
+         * non-blocking setting.
+        */
+
         close(0);
         dup(pipes[0]);
 
-        /* Make stdin pipe not block */
         flags = fcntl(pipes[0], F_GETFL, 0);
         flags |= O_NONBLOCK;
         fcntl(pipes[0], F_SETFL, flags);
@@ -184,9 +248,8 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
     }
 
     /* Write the stdin to the pipe if there is any to write */
-    if(testcase.input.contents != NULL) {
+    if(testcase.input.contents != NULL)
         write(pipes[1], "Hello, world!\n", strlen("Hello, world!\n"));
-    }
     
     /* Wait for a timeout */
     if(testcase.timeout != 0) {
