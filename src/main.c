@@ -60,6 +60,7 @@ int main(void) {
 
     configuration = parse_configuration(CONFIGURATION_FILE);
 
+    verify_testcase_validity(configuration);
     handle_jobs(configuration);
     free_configuration(configuration);
 

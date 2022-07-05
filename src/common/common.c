@@ -86,19 +86,6 @@ void free_configuration(struct Configuration configuration) {
     free(configuration.testcases);
 }
 
-/*
- * @docgen: function
- * @brief: verify the existence of all testcase binaries
- * @name: verify_testcase_validity
- *
- * @description
- * @For each test case, verify that the binary that is intended
- * @to be executed actually exists.
- * @description
- *
- * @param configuration: the configuration containing the testcases
- * @type: struct Configuration
-*/
 void verify_testcase_validity(struct Configuration configuration) {
     int index = 0;
     struct CString path_string = cstring_init("");

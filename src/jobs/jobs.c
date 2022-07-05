@@ -212,16 +212,9 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
     printf("Process %i exited with %i\n", pid, WEXITSTATUS(exit_code));
 }
 
-void handle_jobs(struct Configuration configuration) {
+void start_test_runners(struct PipePairs *pipes, struct Pollfds *descriptors,
+                        struct Configuration configuration) {
     int index = 0;
-    int responses = 0;
-    struct PipePairs *pipes = NULL;
-    struct Pollfds *descriptors = NULL;
-
-    pipes = carray_init(pipes, PIPE_PAIR);
-    descriptors = carray_init(descriptors, POLLFD);
-    
-    verify_testcase_validity(configuration);
 
     /* Run all tests (note that this does actually do any handling
      * of the communication between the processes. It only readies
@@ -266,10 +259,13 @@ void handle_jobs(struct Configuration configuration) {
         carray_append(pipes, pair, PIPE_PAIR);
         carray_append(descriptors, poll_segment, POLLFD);
     }
+}
 
-    /* Wait until all processes have completed their jobs */
-    while(responses != carray_length(descriptors)) {
-        responses = poll(descriptors->contents, carray_length(descriptors), PROCESS_CHECK_TIMEOUT);
+void wait_for_completion(struct Pollfds descriptors) {
+    int responses = 0;
+
+    while(responses != carray_length(&descriptors)) {
+        responses = poll(descriptors.contents, carray_length(&descriptors), PROCESS_CHECK_TIMEOUT);
 
         if(responses > 0) 
             continue;
@@ -283,18 +279,35 @@ void handle_jobs(struct Configuration configuration) {
         }
 
         /* Stop-- error time  */
-        liberror_failure(handle_jobs, poll);
+        liberror_failure(wait_for_completion, poll);
     }
+}
 
-    /* Read all responses */
-    for(index = 0; index < carray_length(pipes); index++) {
+void process_responses(struct PipePairs pipes) {
+    int index = 0;
+
+    for(index = 0; index < carray_length(&pipes); index++) {
         char response[PROCESS_RESPONSE_LENGTH + 1] = "";
 
         /* Read the response */
         INIT_VARIABLE(response);
         printf("...\n");
-        read(pipes->contents[index].read, response, PROCESS_RESPONSE_LENGTH);
+        read(pipes.contents[index].read, response, PROCESS_RESPONSE_LENGTH);
     }
+}
+
+void handle_jobs(struct Configuration configuration) {
+    struct PipePairs *pipes = NULL;
+    struct Pollfds *descriptors = NULL;
+
+    pipes = carray_init(pipes, PIPE_PAIR);
+    descriptors = carray_init(descriptors, POLLFD);
+    
+    /* Spawn test runners to run their tests, wait for the tests to finish,
+     * and read the responses from the test runners. */
+    start_test_runners(pipes, descriptors, configuration);
+    wait_for_completion(*descriptors);
+    process_responses(*pipes);
 
     /* File descriptors are closed in the pipe array releasing function */
     carray_free(pipes, PIPE_PAIR);
