@@ -36,7 +36,9 @@
 */
 
 /*
- * Functions for handling the running of jobs and testcases.
+ * This file contains logic for handling the building and running of jobs.
+ * When a job is built, the test running logic begins. Test running logic
+ * can be found in src/testing.
 */
 
 #include <poll.h>
@@ -50,103 +52,24 @@
 #include "jobs.h"
 #include "../catalyst.h"
 
-#define PIPE_READ   0
-#define PIPE_WRITE  1
-
-void free_configuration(struct Configuration configuration) {
-    int index = 0;
-
-    /* Release the jobs */
-    for(index = 0; index < carray_length(configuration.jobs); index++) {
-        int array_index = 0;
-        struct Job job = configuration.jobs->contents[index];
-
-        cstring_free(job.name);
-        cstring_free(job.make_path);
-
-        for(array_index = 0; array_index < carray_length(job.make_arguments); array_index++) {
-            cstring_free(job.make_arguments->contents[array_index]);
-        }
-
-        free(job.make_arguments->contents);
-        free(job.make_arguments);
-    }
-
-    free(configuration.jobs->contents);
-    free(configuration.jobs);
-
-    /* Release the test cases */
-    for(index = 0; index < carray_length(configuration.testcases); index++) {
-        int array_index = 0;
-        struct Testcase testcase = configuration.testcases->contents[index];
-
-        cstring_free(testcase.path);
-        cstring_free(testcase.input);
-        cstring_free(testcase.output);
-
-        for(array_index = 0; array_index < carray_length(testcase.argv); array_index++) {
-            cstring_free(testcase.argv->contents[array_index]);
-        }
-
-        free(testcase.argv->contents);
-        free(testcase.argv);
-    }
-
-    free(configuration.testcases->contents);
-    free(configuration.testcases);
-}
-
-/*
- * @docgen: function
- * @brief: verify the existence of all testcase binaries
- * @name: verify_testcase_validity
- *
- * @description
- * @For each test case, verify that the binary that is intended
- * @to be executed actually exists.
- * @description
- *
- * @param configuration: the configuration containing the testcases
- * @type: struct Configuration
-*/
-void verify_testcase_validity(struct Configuration configuration) {
-    int index = 0;
-    struct CString path_string = cstring_init("");
-
-    for(index = 0; index < carray_length(configuration.testcases); index++) {
-        struct Testcase testcase = configuration.testcases->contents[index];
-
-        /* Make the path. Reset it first, though. */
-        cstring_reset(&path_string);
-        cstring_concats(&path_string, TESTS_DIRECTORY);
-        cstring_concats(&path_string, LIBPATH_SEPARATOR);
-        cstring_concat(&path_string, testcase.path);
-
-        /* Path exists-- move on. */
-        if(libpath_exists(path_string.contents) == 1)
-            continue;
-
-        fprintf(stderr, "catalys: testcase file '%s' does not exist\n", path_string.contents);
-        exit(EXIT_FAILURE);
-    }
-
-    cstring_free(path_string);
-}
-
 void test_runner(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;
     int index = 0;
     int exit_code = 0;
-    int pipes[2] = {0, 0};
+    int parent_to_child[2] = {0, 0};
+    int child_to_parent[2] = {0, 0};
+    struct CString string = cstring_init("");
 
     /* Disable signal handling in the test runner and the test! (in the test
      * until the process image is replaced, at least.) */
     signal(SIGCHLD, SIG_DFL);
 
-    /* Only prepare pipes if, and only if there is input to
+    /* Only prepare parent_to_child if, and only if there is input to
      * that the test should expect, please. */
-    if(testcase.input.contents != NULL)
-        pipe(pipes);
+    if(testcase.input.contents != NULL) {
+        pipe(parent_to_child);
+        pipe(child_to_parent);
+    }
 
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
@@ -155,7 +78,6 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
         int flags = 0;
         char **argv = NULL;
         struct CString test_path = cstring_init(TESTS_DIRECTORY);
-        char path[1204] = "";
 
         /* Build the path to the testcase */
         cstring_concats(&test_path, LIBPATH_SEPARATOR);
@@ -186,7 +108,7 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
          * output. This might seem simple at first, and it actually kind of
          * is *initially.* In order to communicate with the child process,
          * we must first steup a method of communication. The standard UNIX
-         * approach is to use pipes for this kind of logic, and that is what
+         * approach is to use parent_to_child for this kind of logic, and that is what
          * we do.
          *
          * Now, as I am sure you know, the pipe() function will create a write,
@@ -216,7 +138,10 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
          * the file mapped to file descriptor 0 by duplicating the read end of
          * the pipe with dup(2), which will create a NEW file descriptor at the
          * closest unused slot to the start of the table, which is mapped to
-         * the same file as the read end of the pipe.
+         * the same file as the read end of the pipe. We then essentially do
+         * the same thing as above, but we redirect the stdout of our program
+         * to another pair of pipes so that we do not attempt to the subprocess's
+         * read pipe.
          *
          * Now that is a lot of text to explain two lines of code, but trust me
          * it gets worse. We now enter the area of having to use fcntl to allow
@@ -246,22 +171,34 @@ void test_runner(struct Testcase testcase, struct PipePair pair) {
          * connected to a terminal, then as far as I can tell, read will have
          * special reading behavior for terminals, and will just pause forever.
         */
-
         if(testcase.input.contents != NULL) {
-            close(0);
-            dup(pipes[0]);
+            close(STDIN_FILENO);
+            dup(parent_to_child[0]);
 
-            flags = fcntl(pipes[0], F_GETFL, 0);
+            close(STDOUT_FILENO);
+            dup(child_to_parent[1]);
+
+            /* Close unneeded pipe ends for this fork */
+            close(parent_to_child[1]);
+            close(child_to_parent[0]);
+
+            flags = fcntl(parent_to_child[0], F_GETFL, 0);
             flags |= O_NONBLOCK;
-            fcntl(pipes[0], F_SETFL, flags);
+            fcntl(parent_to_child[0], F_SETFL, flags);
         }
 
         execv(test_path.contents, argv);
     }
 
+    /* Close unnecessary ends of the pipe for the parent process, as the
+     * child process has already inherited its own. */
+    close(parent_to_child[0]);
+    close(child_to_parent[1]);
+
     /* Write the stdin to the pipe if there is any to write */
-    if(testcase.input.contents != NULL)
-        write(pipes[1], "Hello, world!\n", strlen("Hello, world!\n"));
+    if(testcase.input.contents != NULL) {
+        write(parent_to_child[1], testcase.input.contents, testcase.input.length);
+    }
     
     /* Wait for a timeout */
     if(testcase.timeout != 0) {
@@ -355,9 +292,8 @@ void handle_jobs(struct Configuration configuration) {
 
         /* Read the response */
         INIT_VARIABLE(response);
+        printf("...\n");
         read(pipes->contents[index].read, response, PROCESS_RESPONSE_LENGTH);
-
-        printf("%s\n", response);
     }
 
     /* File descriptors are closed in the pipe array releasing function */

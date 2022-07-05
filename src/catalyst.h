@@ -2,8 +2,10 @@
 #define CWARE_CATALYST_H
 
 #include "carray/carray.h"
+#include "common/common.h"
 #include "cstring/cstring.h"
 #include "libpath/libpath.h"
+#include "libproc/libproc.h"
 #include "libmatch/libmatch.h"
 
 #include "parsers/parsers.h"
@@ -36,34 +38,5 @@
  * @description
 */
 void handle_jobs(struct Configuration configuration);
-
-/*
- * @docgen: function
- * @brief: release a configuration from memory
- * @name: free_configuration
- *
- * @include: catalyst.h
- *
- * @description
- * @This function exists because I learned the hard way that heap memory
- * @in a parent process will also need to be freed separatey in a fork'd
- * @process. Or rather, it is in THIS file because of that, so that other
- * @functions can access it.
- * @description
- *
- * @param configuration: the configuration to release
- * @type: struct Configuration
-*/
-void free_configuration(struct Configuration configuration);
-
-
-
-
-
-
-
-
-
-
 
 #endif

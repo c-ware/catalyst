@@ -4,4 +4,6 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "../src/catalyst.h"
+
 #endif
