@@ -40,6 +40,9 @@
 #include <sys/wait.h>
 
 #include "catalyst.h"
+#include "jobs/jobs.h"
+#include "common/common.h"
+#include "parsers/parsers.h"
 
 void handle_sigchild(int x) {
     wait(NULL);

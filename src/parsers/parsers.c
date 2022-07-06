@@ -43,6 +43,7 @@
 #include <stdio.h>
 
 #include "../catalyst.h"
+#include "parsers.h"
 
 /*
  * @docgen: function

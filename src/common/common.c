@@ -42,6 +42,7 @@
 
 #include "common.h"
 #include "../catalyst.h"
+#include "../parsers/parsers.h"
 
 void free_configuration(struct Configuration configuration) {
     int index = 0;

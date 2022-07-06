@@ -38,6 +38,8 @@
 #ifndef CWARE_CATALYST_JOBS_H
 #define CWARE_CATALYST_JOBS_H
 
+struct Configuration;
+
 #define PROCESS_CHECK_TIMEOUT   500
 #define PROCESS_RESPONSE_LENGTH 2048 + 1
 

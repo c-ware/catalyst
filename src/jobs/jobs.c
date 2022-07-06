@@ -51,6 +51,8 @@
 
 #include "jobs.h"
 #include "../catalyst.h"
+#include "../common/common.h"
+#include "../parsers/parsers.h"
 
 void test_runner(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;

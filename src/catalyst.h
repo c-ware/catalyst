@@ -2,13 +2,12 @@
 #define CWARE_CATALYST_H
 
 #include "carray/carray.h"
-#include "common/common.h"
 #include "cstring/cstring.h"
 #include "libpath/libpath.h"
 #include "libproc/libproc.h"
 #include "libmatch/libmatch.h"
 
-#include "parsers/parsers.h"
+struct Configuration;
 
 /* Configuration */
 #define CONFIGURATION_FILE  ".catalyst"

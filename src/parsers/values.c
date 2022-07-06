@@ -44,6 +44,7 @@
 #include <ctype.h>
 
 #include "../catalyst.h"
+#include "parsers.h"
 
 #define ADDCH_AND_CONCAT(character)             \
     if(cursor == READ_BUFFER_LENGTH) {          \
