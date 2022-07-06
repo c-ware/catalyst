@@ -1,5 +1,5 @@
-OBJS=src/main.o src/cstring/cstring.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/parsers/parsers.o src/parsers/values.o 
-TESTOBJS=src/cstring/cstring.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/parsers/parsers.o src/parsers/values.o 
+OBJS=src/main.o src/cstring/cstring.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/testing/testing.o src/parsers/parsers.o src/parsers/values.o 
+TESTOBJS=src/cstring/cstring.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/testing/testing.o src/parsers/parsers.o src/parsers/values.o 
 TESTS=tests/test_a 
 CC=cc
 PREFIX=/usr/local
@@ -52,6 +52,9 @@ src/common/common.o: src/common/common.c src/common/common.h src/catalyst.h src/
 
 src/jobs/jobs.o: src/jobs/jobs.c src/jobs/jobs.h src/catalyst.h src/common/common.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/jobs/jobs.c -o src/jobs/jobs.o $(LDFLAGS) $(LDLIBS)
+
+src/testing/testing.o: src/testing/testing.c src/testing/testing.h src/catalyst.h
+	$(CC) -c $(CFLAGS) src/testing/testing.c -o src/testing/testing.o $(LDFLAGS) $(LDLIBS)
 
 src/parsers/parsers.o: src/parsers/parsers.c src/catalyst.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/parsers/parsers.c -o src/parsers/parsers.o $(LDFLAGS) $(LDLIBS)
