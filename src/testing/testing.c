@@ -169,12 +169,45 @@ void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_t
     execv(test_path.contents, argv);
 }
 
+void timeout_test(struct Testcase testcase, int writefd, int pid) {
+    int written = 0;
+    int waitpid_status = 0;
+    char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
+
+    libproc_sleep(testcase.timeout * LIBPROC_SLEEP_MILLI);
+    waitpid_status = waitpid(pid, NULL, WNOHANG);
+
+    /* Error for waitpid */
+    if(waitpid_status == -1)
+        liberror_failure(timeout_test, waitpid);
+
+    /* Child exited in time */
+    if(waitpid_status != 0)
+        return;
+
+    /* Write the error message and handle any errors when
+     * writing it */
+    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit within %i milliseconds\n",
+                    testcase.name.contents, testcase.path.contents, testcase.timeout);
+    written = strlen(buffer);
+
+    if(written >= PROCESS_RESPONSE_LENGTH) {
+        fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
+                testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
+        abort();
+    }
+
+    written = write(writefd, buffer, written);
+
+    kill(pid, SIGKILL);
+    exit(EXIT_FAILURE);
+}
+
 void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;
     int exit_code = 0;
     int parent_to_child[2] = {0, 0};
     int child_to_parent[2] = {0, 0};
-    char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
 
     /* Disable signal handling in the test runner and the test! (in the test
      * until the process image is replaced, at least.) */
@@ -190,9 +223,8 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
      * to the process image replacement. */
-    if((pid = fork()) == 0) {
+    if((pid = fork()) == 0)
         testcase_fork(testcase, parent_to_child, child_to_parent);
-    }
 
     /* Close unnecessary ends of the pipe for the parent process, as the
      * child process has already inherited its own. */
@@ -204,42 +236,8 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
         write(parent_to_child[1], testcase.input.contents, testcase.input.length);
     
     /* Wait for a timeout (in milliseconds) */
-    if(testcase.timeout != 0) {
-        int waitpid_status = 0;
-
-        libproc_sleep(testcase.timeout * LIBPROC_SLEEP_MILLI);
-        waitpid_status = waitpid(pid, NULL, WNOHANG);
-
-        /* Error for waitpid */
-        if(waitpid_status == -1) {
-            liberror_failure(handle_testcase, waitpid);
-        }
-
-        /* Child process did not exit in time. Kill the process
-         * and blast off. */
-        if(waitpid_status == 0) {
-            int written = 0;
-
-            /* Write the error message and handle any errors when
-             * writing it */
-            libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit within %i milliseconds\n",
-                            testcase.name.contents, testcase.path.contents, testcase.timeout);
-            written = strlen(buffer);
-
-            if(written >= PROCESS_RESPONSE_LENGTH) {
-                fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
-                        testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
-                abort();
-            }
-
-            written = write(pair.write, buffer, written);
-
-            kill(pid, SIGKILL);
-            exit(EXIT_FAILURE);
-        }
-
-        return; 
-    }
+    if(testcase.timeout != 0)
+        timeout_test(testcase, pair.write, pid);
 
     /* Wait for the child process to quit, and extract the exit code */
     wait(&exit_code);
