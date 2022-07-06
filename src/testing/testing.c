@@ -42,6 +42,7 @@
 #define _POSIX_C_SOURCE 1
 
 #include <poll.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
@@ -52,10 +53,6 @@
 #include "../jobs/jobs.h"
 #include "../parsers/parsers.h"
 
-static const char *assertion_failure =
-    " a.out: main.c:5: main: Assertion `1 == 0' failed.\n"
-    "Aborted (core dumped)";
-
 static const char *timeout_failure =
     "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit "
     "within %i milliseconds\n";
@@ -64,12 +61,38 @@ static const char *abortion_failure =
     "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' aborted with the"
     " error message:\n%s\n";
 
+static const char *abortion_failure_no_output =
+    "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' aborted\n";
+
 static const char *successful =
     "[ \x1b[32mSUCCESS\x1B[0m ] testcase '%s' for '%s' finished successfully\n";
+
+int fd_is_readable(int fd) {
+    struct pollfd descriptors[1];
+
+    INIT_VARIABLE(descriptors);
+    descriptors[0].fd = fd;
+    descriptors[0].events = POLLIN;
+
+    /* Timeout of 500 milliseconds is kind of arbitrary, honestly. That
+     * being said, may be better to implement something in libproc for this
+     * kind of thing (portable fd checking). */
+    switch(poll(descriptors, 1, 500)) {
+        case -1:
+            liberror_failure(fd_is_readable, poll);
+
+            break;
+        case 0:
+            return 0;
+    }
+
+    return 1;
+}
 
 void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_to_parent[2]) {
     int flags = 0;
     int index = 0;
+    int new_flags = 0;
     char **argv = NULL;
     struct CString test_path = cstring_init(TESTS_DIRECTORY);
 
@@ -169,17 +192,24 @@ void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_t
         close(STDIN_FILENO);
         dup(parent_to_child[0]);
 
-        close(STDOUT_FILENO);
-        dup(child_to_parent[1]);
-
         /* Close unneeded pipe ends for this fork */
+        /*
         close(parent_to_child[1]);
         close(child_to_parent[0]);
+        */
 
         flags = fcntl(parent_to_child[0], F_GETFL, 0);
         flags |= O_NONBLOCK;
         fcntl(parent_to_child[0], F_SETFL, flags);
     }
+
+    /* Pipe stdout and stderr into the read pipe. These will
+     * always be made. */
+    close(STDOUT_FILENO);
+    dup(child_to_parent[1]);
+
+    close(STDERR_FILENO);
+    dup(child_to_parent[1]);
 
     execv(test_path.contents, argv);
 }
@@ -215,18 +245,68 @@ void timeout_test(struct Testcase testcase, int writefd, int pid, int *exit_code
     exit(EXIT_FAILURE);
 }
 
-void aborted_failure(struct Testcase testcase, int writefd, int pid, int exit_code) {
+void aborted_failure(struct Testcase testcase, int writefd, int readfd, int pid, int exit_code) {
     char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
+    struct CString process_output = cstring_init("");
 
     /* Test did not abort. Though, it could still be a generic
      * failed exit code, but this is not what this test is for. */
     if(exit_code != LIBPROC_ABORTED)
         return;
 
-    /* Write the error message and handle any errors when
-     * writing it */
-    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, abortion_failure,
-                    testcase.name.contents, testcase.path.contents, assertion_failure);
+    /* Extract the process's output (if there is any to read). We can be
+     * sure that there will not be any text to read if there is none NOW
+     * because.. the process exited. */
+    if(fd_is_readable(readfd) == 1) {
+        int read_bytes = 0;
+        char read_buffer[512 + 1];
+
+        INIT_VARIABLE(read_buffer);
+
+        while(1) {
+            read_bytes = read(readfd, read_buffer, 512);
+
+            /* Dump the string */
+            if(read_bytes == 512) {
+                cstring_concats(&process_output, read_buffer);
+
+                continue;
+            } 
+
+            /* Interrupts are nothing to worry about-- just write
+             * what we currently have and keep going */
+            if(errno == EINTR) {
+                cstring_concats(&process_output, read_buffer);
+
+                continue;
+            }
+
+            /* Unknown error */
+            if(errno == -1)
+                liberror_failure(aborted_failure, read);
+
+            cstring_concats(&process_output, read_buffer);
+
+            break;
+        }
+    }
+
+    /* Due to a limitation of either UNIX, or the libc (currently unsure)
+     * aborting the program will not flush the standard streams. This is 
+     * mostly an OK situation, as things like assert will flush the buffer
+     * (the purpose of this function is to mostly catch assertions). Since
+     * it will not flush them, stuff like printing will not be caught in
+     * the read output. So if a programmer wants to have abort in their program
+     * and display error messages with them, they should make sure to flush
+     * the stdout and stderr. */
+    if(process_output.length == 0) {
+        libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, abortion_failure_no_output,
+                        testcase.name.contents, testcase.path.contents);
+
+    } else {
+        libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, abortion_failure,
+                        testcase.name.contents, testcase.path.contents, process_output.contents);
+    }
 
     if(strlen(buffer) >= PROCESS_RESPONSE_LENGTH) {
         fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
@@ -234,8 +314,8 @@ void aborted_failure(struct Testcase testcase, int writefd, int pid, int exit_co
         abort();
     }
 
+    cstring_free(process_output);
     write(writefd, buffer, strlen(buffer));
-    kill(pid, SIGKILL);
     exit(EXIT_FAILURE);
 }
 
@@ -258,6 +338,7 @@ void successful_test(struct Testcase testcase, int writefd, int pid) {
 
 void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;
+    int new_flags = 0;
     int exit_code = 0;
     int parent_to_child[2] = {0, 0};
     int child_to_parent[2] = {0, 0};
@@ -268,10 +349,12 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
 
     /* Only prepare parent_to_child if, and only if there is input to
      * that the test should expect, please. */
-    if(testcase.input.contents != NULL) {
+    if(testcase.input.contents != NULL)
         pipe(parent_to_child);
-        pipe(child_to_parent);
-    }
+
+    /* We always want a communication port between the test and 
+     * the test runner, though. */
+    pipe(child_to_parent);
 
     /* Prepare the child process (will become the test). Should be noted that
      * all allocations under this block will not need to be released due
@@ -281,8 +364,10 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
 
     /* Close unnecessary ends of the pipe for the parent process, as the
      * child process has already inherited its own. */
+    /*
     close(parent_to_child[0]);
     close(child_to_parent[1]);
+    */
 
     /* Write the stdin to the pipe if there is any to write */
     if(testcase.input.contents != NULL)
@@ -297,10 +382,8 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
 
     /* Wait for the child process to quit, and extract the exit code */
     wait(&exit_code);
-    printf("Exit code: %i\n", exit_code);
 
     /* Handle an aborted test if it did abort */
-    aborted_failure(testcase, pair.write, pid, exit_code);
-
+    aborted_failure(testcase, pair.write, child_to_parent[0], pid, exit_code);
     successful_test(testcase, pair.write, pid);
 }

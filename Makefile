@@ -1,6 +1,6 @@
 OBJS=src/main.o src/cstring/cstring.o src/libc99/stdlib.o src/libc99/stdio.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/libproc/libproc.o src/libproc/sleep.o src/testing/testing.o src/parsers/parsers.o src/parsers/values.o 
 TESTOBJS=src/cstring/cstring.o src/libc99/stdlib.o src/libc99/stdio.o src/libmatch/read.o src/libmatch/cond.o src/libmatch/cursor.o src/libmatch/match.o src/libpath/libpath.o src/common/common.o src/jobs/jobs.o src/libproc/libproc.o src/libproc/sleep.o src/testing/testing.o src/parsers/parsers.o src/parsers/values.o 
-TESTS=tests/test_a tests/test_b 
+TESTS=tests/test_a tests/test_b tests/test_c 
 CC=cc
 PREFIX=/usr/local
 LDFLAGS=
@@ -28,6 +28,9 @@ tests/test_a: tests/test_a.c tests/common.h $(TESTOBJS)
 
 tests/test_b: tests/test_b.c tests/common.h $(TESTOBJS)
 	$(CC) tests/test_b.c -o tests/test_b $(TESTOBJS) $(CFLAGS) $(LDFLAGS) $(LDLIBS)
+
+tests/test_c: tests/test_c.c tests/common.h $(TESTOBJS)
+	$(CC) tests/test_c.c -o tests/test_c $(TESTOBJS) $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 
 src/main.o: src/main.c src/catalyst.h src/jobs/jobs.h src/common/common.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/main.c -o src/main.o $(LDFLAGS) $(LDLIBS)
