@@ -6,7 +6,8 @@
 #include "common.h"
 
 int main(int argc, char **argv) {
-    sleep(1);
+    sleep(2);
+    abort();
 
     return 0;
 }

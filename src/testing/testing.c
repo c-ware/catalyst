@@ -52,9 +52,17 @@
 #include "../jobs/jobs.h"
 #include "../parsers/parsers.h"
 
+static const char *assertion_failure =
+    " a.out: main.c:5: main: Assertion `1 == 0' failed.\n"
+    "Aborted (core dumped)";
+
 static const char *timeout_failure =
     "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit "
     "within %i milliseconds\n";
+
+static const char *abortion_failure =
+    "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' aborted with the"
+    " error message:\n%s\n";
 
 static const char *successful =
     "[ \x1b[32mSUCCESS\x1B[0m ] testcase '%s' for '%s' finished successfully\n";
@@ -176,25 +184,49 @@ void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_t
     execv(test_path.contents, argv);
 }
 
-void timeout_test(struct Testcase testcase, int writefd, int pid) {
+void timeout_test(struct Testcase testcase, int writefd, int pid, int *exit_code) {
     int waitpid_status = 0;
     char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
 
     libproc_sleep(testcase.timeout * LIBPROC_SLEEP_MILLI);
-    waitpid_status = waitpid(pid, NULL, WNOHANG);
+    waitpid_status = waitpid(pid, exit_code, WNOHANG);
 
     /* Error for waitpid */
     if(waitpid_status == -1)
         liberror_failure(timeout_test, waitpid);
 
     /* Child exited in time */
-    if(waitpid_status != 0)
+    if(waitpid_status > 0)
         return;
 
     /* Write the error message and handle any errors when
      * writing it */
     libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, timeout_failure,
                     testcase.name.contents, testcase.path.contents, testcase.timeout);
+
+    if(strlen(buffer) >= PROCESS_RESPONSE_LENGTH) {
+        fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
+                testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
+        abort();
+    }
+
+    write(writefd, buffer, strlen(buffer));
+    kill(pid, SIGKILL);
+    exit(EXIT_FAILURE);
+}
+
+void aborted_failure(struct Testcase testcase, int writefd, int pid, int exit_code) {
+    char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
+
+    /* Test did not abort. Though, it could still be a generic
+     * failed exit code, but this is not what this test is for. */
+    if(exit_code != LIBPROC_ABORTED)
+        return;
+
+    /* Write the error message and handle any errors when
+     * writing it */
+    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, abortion_failure,
+                    testcase.name.contents, testcase.path.contents, assertion_failure);
 
     if(strlen(buffer) >= PROCESS_RESPONSE_LENGTH) {
         fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
@@ -257,11 +289,18 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
         write(parent_to_child[1], testcase.input.contents, testcase.input.length);
     
     /* Wait for a timeout (in milliseconds). If the test ends in time,
-     * it will fall through. */
+     * it will fall through. Since the child process can also abort during
+     * the timeout, which will count as a 'successful' test, we want the
+     * exit code to be distributed to the exit code handlers too. */
     if(testcase.timeout != 0)
-        timeout_test(testcase, pair.write, pid);
+        timeout_test(testcase, pair.write, pid, &exit_code);
 
     /* Wait for the child process to quit, and extract the exit code */
     wait(&exit_code);
+    printf("Exit code: %i\n", exit_code);
+
+    /* Handle an aborted test if it did abort */
+    aborted_failure(testcase, pair.write, pid, exit_code);
+
     successful_test(testcase, pair.write, pid);
 }
