@@ -1,7 +1,9 @@
 #ifndef CWARE_CATALYST_H
 #define CWARE_CATALYST_H
 
+#include "libc99/libc99.h"
 #include "carray/carray.h"
+#include "libproc/libproc.h"
 #include "cstring/cstring.h"
 #include "libpath/libpath.h"
 #include "libproc/libproc.h"

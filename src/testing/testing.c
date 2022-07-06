@@ -39,6 +39,8 @@
  * This file has routines for executing a testcase.
 */
 
+#define _POSIX_C_SOURCE 1
+
 #include <poll.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -50,13 +52,129 @@
 #include "../jobs/jobs.h"
 #include "../parsers/parsers.h"
 
+void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_to_parent[2]) {
+    int flags = 0;
+    int index = 0;
+    char **argv = NULL;
+    struct CString test_path = cstring_init(TESTS_DIRECTORY);
+
+    /* Build the path to the testcase */
+    cstring_concats(&test_path, LIBPATH_SEPARATOR);
+    cstring_concat(&test_path, testcase.path);
+
+    /* Prepare the argv (+1 for NULL at the end of the array, and
+     * inserting at 0 for the path to the test */
+    carray_insert(testcase.argv, 0, test_path, CSTRING);
+    argv = malloc((carray_length(testcase.argv) + 1) * sizeof(char *));
+
+    /* Extract pointers to all the contents of each argument */
+    for(index = 0; index < carray_length(testcase.argv); index++) {
+        argv[index] = testcase.argv->contents[index].contents;
+    }
+
+    /* NULL so that execv can work on the array */
+    argv[index] = NULL;
+
+    /* Oh boy. This section has to be the single most confusing part in
+     * this entire program. This might take a little bit to explain.
+     *
+     * So to start, let's remember the purpose of this function.
+     * This function, which is spawned by handle_jobs, serves the
+     * purpose of running an individual test.
+     *
+     * Part of running a test involves, among other things, writing
+     * input into the test's stdin to make sure it produces the expected
+     * output. This might seem simple at first, and it actually kind of
+     * is *initially.* In order to communicate with the child process,
+     * we must first steup a method of communication. The standard UNIX
+     * approach is to use parent_to_child for this kind of logic, and that is what
+     * we do.
+     *
+     * Now, as I am sure you know, the pipe() function will create a write,
+     * and read end of the pipe. We want the subprocess to read from the
+     * end of the pipe, so that we can pipe data through it-- effectively
+     * making a 'new' standard input stream so to speak.
+     *
+     * To do this, we must first understand how UNIX internally handles
+     * file descriptors. Internally, there is a table of allocated file
+     * descriptors for a process that, as new files are opened, get
+     * assigned to whatever file descriptor is closest to the start of
+     * the list.
+     *
+     * Because of this behavior, this means that when you close a file
+     * descriptor, assuming all file descriptor slots below it are being
+     * used, it can then be 'refilled' with a new file descriptor. We can
+     * exploit this behavior to essentially assign a new file to the stdn.
+     *
+     * Under POSIX, the standard streams have 'reserved' file descriptors
+     * in the sense that the libc should respect that STDIN_FILENO (which
+     * is 0 under POSIX) will always be treated as the file descriptor of
+     * the stdin stream.
+     * 
+     * This means, that if we close the file descriptor STDIN_FILENO, which
+     * is quite literally the first expected file descriptor, it will
+     * become available to be overwritten. This will allow us to 'change'
+     * the file mapped to file descriptor 0 by duplicating the read end of
+     * the pipe with dup(2), which will create a NEW file descriptor at the
+     * closest unused slot to the start of the table, which is mapped to
+     * the same file as the read end of the pipe. We then essentially do
+     * the same thing as above, but we redirect the stdout of our program
+     * to another pair of pipes so that we do not attempt to the subprocess's
+     * read pipe.
+     *
+     * Now that is a lot of text to explain two lines of code, but trust me
+     * it gets worse. We now enter the area of having to use fcntl to allow
+     * for non-blocking I/O.
+     *
+     * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
+     * like fgetc will continue to infinitely block when there is no more
+     * data there, not sure why. To replicate Bash not spawning a pipe when
+     * there is no  (for the sake of people's expectations of what will
+     * happen when trying to fgetc in a test with no stdin expected), a pipe
+     * will not be created unless input is expected. We also do this because
+     * it might be better to just have it block than silently have fgetc
+     * return -1, not sure, we will see.
+     *
+     * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
+     * like fgetc will continue to infinitely block when there is no more
+     * data there, not sure why. Something this code originally did was it
+     * would open a pipe to stdin regardless of whether or not there was
+     * actually data to read.
+     *
+     * This both causes a waste of file descriptor space, and can
+     * potentially cause bugs in existing programs which rely on having an
+     * infinite pause when there is no pipe setup. The infinite pause is,
+     * as far as I can tell, caused by the child process inheriting the
+     * stdin of the parent process, and not modifying it to use a pipe
+     * due to not having any actual data to read. When stdin is still
+     * connected to a terminal, then as far as I can tell, read will have
+     * special reading behavior for terminals, and will just pause forever.
+    */
+    if(testcase.input.contents != NULL) {
+        close(STDIN_FILENO);
+        dup(parent_to_child[0]);
+
+        close(STDOUT_FILENO);
+        dup(child_to_parent[1]);
+
+        /* Close unneeded pipe ends for this fork */
+        close(parent_to_child[1]);
+        close(child_to_parent[0]);
+
+        flags = fcntl(parent_to_child[0], F_GETFL, 0);
+        flags |= O_NONBLOCK;
+        fcntl(parent_to_child[0], F_SETFL, flags);
+    }
+
+    execv(test_path.contents, argv);
+}
+
 void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     int pid = 0;
-    int index = 0;
     int exit_code = 0;
     int parent_to_child[2] = {0, 0};
     int child_to_parent[2] = {0, 0};
-    struct CString string = cstring_init("");
+    char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
 
     /* Disable signal handling in the test runner and the test! (in the test
      * until the process image is replaced, at least.) */
@@ -73,119 +191,7 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
      * all allocations under this block will not need to be released due
      * to the process image replacement. */
     if((pid = fork()) == 0) {
-        int flags = 0;
-        char **argv = NULL;
-        struct CString test_path = cstring_init(TESTS_DIRECTORY);
-
-        /* Build the path to the testcase */
-        cstring_concats(&test_path, LIBPATH_SEPARATOR);
-        cstring_concat(&test_path, testcase.path);
-
-        /* Prepare the argv (+1 for NULL at the end of the array, and
-         * inserting at 0 for the path to the test */
-        carray_insert(testcase.argv, 0, test_path, CSTRING);
-        argv = malloc((carray_length(testcase.argv) + 1) * sizeof(char *));
-
-        /* Extract pointers to all the contents of each argument */
-        for(index = 0; index < carray_length(testcase.argv); index++) {
-            argv[index] = testcase.argv->contents[index].contents;
-        }
-
-        /* NULL so that execv can work on the array */
-        argv[index] = NULL;
-
-        /* Oh boy. This section has to be the single most confusing part in
-         * this entire program. This might take a little bit to explain.
-         *
-         * So to start, let's remember the purpose of this function.
-         * This function, which is spawned by handle_jobs, serves the
-         * purpose of running an individual test.
-         *
-         * Part of running a test involves, among other things, writing
-         * input into the test's stdin to make sure it produces the expected
-         * output. This might seem simple at first, and it actually kind of
-         * is *initially.* In order to communicate with the child process,
-         * we must first steup a method of communication. The standard UNIX
-         * approach is to use parent_to_child for this kind of logic, and that is what
-         * we do.
-         *
-         * Now, as I am sure you know, the pipe() function will create a write,
-         * and read end of the pipe. We want the subprocess to read from the
-         * end of the pipe, so that we can pipe data through it-- effectively
-         * making a 'new' standard input stream so to speak.
-         *
-         * To do this, we must first understand how UNIX internally handles
-         * file descriptors. Internally, there is a table of allocated file
-         * descriptors for a process that, as new files are opened, get
-         * assigned to whatever file descriptor is closest to the start of
-         * the list.
-         *
-         * Because of this behavior, this means that when you close a file
-         * descriptor, assuming all file descriptor slots below it are being
-         * used, it can then be 'refilled' with a new file descriptor. We can
-         * exploit this behavior to essentially assign a new file to the stdn.
-         *
-         * Under POSIX, the standard streams have 'reserved' file descriptors
-         * in the sense that the libc should respect that STDIN_FILENO (which
-         * is 0 under POSIX) will always be treated as the file descriptor of
-         * the stdin stream.
-         * 
-         * This means, that if we close the file descriptor STDIN_FILENO, which
-         * is quite literally the first expected file descriptor, it will
-         * become available to be overwritten. This will allow us to 'change'
-         * the file mapped to file descriptor 0 by duplicating the read end of
-         * the pipe with dup(2), which will create a NEW file descriptor at the
-         * closest unused slot to the start of the table, which is mapped to
-         * the same file as the read end of the pipe. We then essentially do
-         * the same thing as above, but we redirect the stdout of our program
-         * to another pair of pipes so that we do not attempt to the subprocess's
-         * read pipe.
-         *
-         * Now that is a lot of text to explain two lines of code, but trust me
-         * it gets worse. We now enter the area of having to use fcntl to allow
-         * for non-blocking I/O.
-         *
-         * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
-         * like fgetc will continue to infinitely block when there is no more
-         * data there, not sure why. To replicate Bash not spawning a pipe when
-         * there is no  (for the sake of people's expectations of what will
-         * happen when trying to fgetc in a test with no stdin expected), a pipe
-         * will not be created unless input is expected. We also do this because
-         * it might be better to just have it block than silently have fgetc
-         * return -1, not sure, we will see.
-         *
-         * Without setting O_NONBLOCK on the stdin's new file descriptor, calls
-         * like fgetc will continue to infinitely block when there is no more
-         * data there, not sure why. Something this code originally did was it
-         * would open a pipe to stdin regardless of whether or not there was
-         * actually data to read.
-         *
-         * This both causes a waste of file descriptor space, and can
-         * potentially cause bugs in existing programs which rely on having an
-         * infinite pause when there is no pipe setup. The infinite pause is,
-         * as far as I can tell, caused by the child process inheriting the
-         * stdin of the parent process, and not modifying it to use a pipe
-         * due to not having any actual data to read. When stdin is still
-         * connected to a terminal, then as far as I can tell, read will have
-         * special reading behavior for terminals, and will just pause forever.
-        */
-        if(testcase.input.contents != NULL) {
-            close(STDIN_FILENO);
-            dup(parent_to_child[0]);
-
-            close(STDOUT_FILENO);
-            dup(child_to_parent[1]);
-
-            /* Close unneeded pipe ends for this fork */
-            close(parent_to_child[1]);
-            close(child_to_parent[0]);
-
-            flags = fcntl(parent_to_child[0], F_GETFL, 0);
-            flags |= O_NONBLOCK;
-            fcntl(parent_to_child[0], F_SETFL, flags);
-        }
-
-        execv(test_path.contents, argv);
+        testcase_fork(testcase, parent_to_child, child_to_parent);
     }
 
     /* Close unnecessary ends of the pipe for the parent process, as the
@@ -194,18 +200,47 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     close(child_to_parent[1]);
 
     /* Write the stdin to the pipe if there is any to write */
-    if(testcase.input.contents != NULL) {
+    if(testcase.input.contents != NULL)
         write(parent_to_child[1], testcase.input.contents, testcase.input.length);
-    }
     
-    /* Wait for a timeout */
+    /* Wait for a timeout (in milliseconds) */
     if(testcase.timeout != 0) {
-        /* WIP */
+        int waitpid_status = 0;
+
+        libproc_sleep(testcase.timeout * LIBPROC_SLEEP_MILLI);
+        waitpid_status = waitpid(pid, NULL, WNOHANG);
+
+        /* Error for waitpid */
+        if(waitpid_status == -1) {
+            liberror_failure(handle_testcase, waitpid);
+        }
+
+        /* Child process did not exit in time. Kill the process
+         * and blast off. */
+        if(waitpid_status == 0) {
+            int written = 0;
+
+            /* Write the error message and handle any errors when
+             * writing it */
+            libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit within %i milliseconds\n",
+                            testcase.name.contents, testcase.path.contents, testcase.timeout);
+            written = strlen(buffer);
+
+            if(written >= PROCESS_RESPONSE_LENGTH) {
+                fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
+                        testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
+                abort();
+            }
+
+            written = write(pair.write, buffer, written);
+
+            kill(pid, SIGKILL);
+            exit(EXIT_FAILURE);
+        }
 
         return; 
     }
 
     /* Wait for the child process to quit, and extract the exit code */
     wait(&exit_code);
-    printf("Process %i exited with %i\n", pid, WEXITSTATUS(exit_code));
 }

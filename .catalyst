@@ -6,8 +6,9 @@ job: {
 
 testcase: {
     file: "test_a"
+    name: "foo"
     argv: "foo", "bar", "baz"
     stdin: "hi i am writing this to your stdin"
     stdout: "foo bar baz\ntuna spam thud\nwaldo quz buzz\n"
-    timeout: 0
+    timeout: 500
 }

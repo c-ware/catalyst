@@ -61,10 +61,11 @@
 #define QUALIFIER_JOB_ARGUMENTS     3
 
 #define QUALIFIER_TESTCASE_FILE         1
-#define QUALIFIER_TESTCASE_ARGV         2
-#define QUALIFIER_TESTCASE_STDOUT       3
-#define QUALIFIER_TESTCASE_STDIN        4
-#define QUALIFIER_TESTCASE_TIMEOUT      5
+#define QUALIFIER_TESTCASE_NAME         2
+#define QUALIFIER_TESTCASE_ARGV         3
+#define QUALIFIER_TESTCASE_STDOUT       4
+#define QUALIFIER_TESTCASE_STDIN        5
+#define QUALIFIER_TESTCASE_TIMEOUT      6
 
 /* Data structure properties */
 #define TESTCASE_TYPE   struct Testcase
@@ -109,6 +110,9 @@ do {                                                                            
  * @field path: the path to the test
  * @type: struct CString
  *
+ * @field name: the name of the testcase
+ * @type: struct CString
+ *
  * @field argv: an array of arguments to the program
  * @type: struct CStrings *
  *
@@ -123,6 +127,7 @@ do {                                                                            
 */
 struct Testcase {
     struct CString path;
+    struct CString name;
     struct CStrings *argv;
     struct CString input;
     struct CString output;

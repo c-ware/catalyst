@@ -334,6 +334,9 @@ int enumerate_testcase_key(struct LibmatchCursor *cursor) {
     if(strcmp(testcase_key_name, "file") == 0)
         return QUALIFIER_TESTCASE_FILE;
 
+    if(strcmp(testcase_key_name, "name") == 0)
+        return QUALIFIER_TESTCASE_NAME;
+
     if(strcmp(testcase_key_name, "argv") == 0)
         return QUALIFIER_TESTCASE_ARGV;
 
@@ -502,6 +505,13 @@ struct Testcase parse_testcase(struct LibmatchCursor *cursor, struct ParserState
         switch(key) {
             case QUALIFIER_TESTCASE_FILE:
                 new_testcase.path = parse_string(cursor);
+
+                libmatch_cursor_getch(cursor);
+
+                break;
+
+            case QUALIFIER_TESTCASE_NAME:
+                new_testcase.name = parse_string(cursor);
 
                 libmatch_cursor_getch(cursor);
 

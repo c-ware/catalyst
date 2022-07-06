@@ -53,6 +53,7 @@
 #include "../catalyst.h"
 #include "../common/common.h"
 #include "../parsers/parsers.h"
+#include "../testing/testing.h"
 
 void start_test_runners(struct PipePairs *pipes, struct Pollfds *descriptors,
                         struct Configuration configuration) {
@@ -133,8 +134,9 @@ void process_responses(struct PipePairs pipes) {
 
         /* Read the response */
         INIT_VARIABLE(response);
-        printf("...\n");
         read(pipes.contents[index].read, response, PROCESS_RESPONSE_LENGTH);
+
+        printf("%s", response);
     }
 }
 

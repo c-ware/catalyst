@@ -41,16 +41,29 @@
  * @name: libproc
  *
  * @embed constant: LIBPROC_ABORTED
+ * @embed constant: LIBPROC_SLEEP_MILLI
+ * @embed constant: LIBPROC_SLEEP_SECOND
+ * @embed function: libproc_sleep
  *
  * @description
  * @libproc is a library that aims to allow cross platform handling of
  * @processes, and providing utility functions that can make dealing with
  * @processes easier.
+ * @
+ * @table
+ * @sep: ;
+ * @Manual;Description
+ * @libproc_sleep(cware);microsecond sleeping
+ * @table
  * @description
+ *
+ * @reference: cware(cware)
 */
 
 #ifndef CWARE_LIBPROC_H
 #define CWARE_LIBPROC_H
+
+#include "liberror/liberror.h"
 
 /*
  * Represents the exit code returned by the operating system's native
@@ -74,5 +87,67 @@
 #if defined(__ultrix__)
 #define LIBPROC_ABORTED 132
 #endif
+
+/*
+ * Some useful constants for dealing with sleeping in pre-determined
+ * intervals based off microseconds.
+*/
+
+/*
+ * @docgen: constant
+ * @name: LIBPROC_SLEEP_MILLI
+ * @brief: one millisecond in microseconds
+ * @value: 1000
+*/
+#define LIBPROC_SLEEP_MILLI     (1000)
+
+/*
+ * @docgen: constant
+ * @name: LIBPROC_SLEEP_SECOND
+ * @brief: one second in microseconds
+ * @value: 1000000
+*/
+#define LIBPROC_SLEEP_SECOND    (LIBPROC_SLEEP_MILLI * 1000)
+
+/*
+ * @docgen: function
+ * @brief: put the thread to sleep for a n microseconds
+ * @name: libproc_sleep
+ *
+ * #include: libproc.h
+ *
+ * @description
+ * @This function will allow the programmer to put the running thread or
+ * @process to sleep for a given number of microseconds.
+ * @description
+ *
+ * @example
+ * @#include <stdio.h>
+ * @#include "libproc.h"
+ * @
+ * @int main(void) {
+ * @    // Sleep for one second
+ * @    libproc_sleep(LIBPROC_SLEEP_SECOND);
+ * @
+ * @    return 0;
+ * @}
+ * @example
+ *
+ * @error: microseconds is NULL
+ *
+ * @param microseconds: the number of microseconds to sleep
+ * @type: int
+*/
+void libproc_sleep(int microseconds);
+
+
+
+
+
+
+
+
+
+
 
 #endif
