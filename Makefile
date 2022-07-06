@@ -26,7 +26,7 @@ uninstall:
 tests/test_a: tests/test_a.c tests/common.h $(TESTOBJS)
 	$(CC) tests/test_a.c -o tests/test_a $(TESTOBJS) $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 
-src/main.o: src/main.c src/catalyst.h
+src/main.o: src/main.c src/catalyst.h src/jobs/jobs.h src/common/common.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/main.c -o src/main.o $(LDFLAGS) $(LDLIBS)
 
 src/cstring/cstring.o: src/cstring/cstring.c src/cstring/cstring.h
@@ -47,16 +47,16 @@ src/libmatch/match.o: src/libmatch/match.c src/libmatch/libmatch.h
 src/libpath/libpath.o: src/libpath/libpath.c src/libpath/libpath.h src/libpath/lp_inter.h
 	$(CC) -c $(CFLAGS) src/libpath/libpath.c -o src/libpath/libpath.o $(LDFLAGS) $(LDLIBS)
 
-src/common/common.o: src/common/common.c src/common/common.h src/catalyst.h
+src/common/common.o: src/common/common.c src/common/common.h src/catalyst.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/common/common.c -o src/common/common.o $(LDFLAGS) $(LDLIBS)
 
-src/jobs/jobs.o: src/jobs/jobs.c src/jobs/jobs.h src/catalyst.h
+src/jobs/jobs.o: src/jobs/jobs.c src/jobs/jobs.h src/catalyst.h src/common/common.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/jobs/jobs.c -o src/jobs/jobs.o $(LDFLAGS) $(LDLIBS)
 
-src/parsers/parsers.o: src/parsers/parsers.c src/catalyst.h
+src/parsers/parsers.o: src/parsers/parsers.c src/catalyst.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/parsers/parsers.c -o src/parsers/parsers.o $(LDFLAGS) $(LDLIBS)
 
-src/parsers/values.o: src/parsers/values.c src/catalyst.h
+src/parsers/values.o: src/parsers/values.c src/catalyst.h src/parsers/parsers.h
 	$(CC) -c $(CFLAGS) src/parsers/values.c -o src/parsers/values.o $(LDFLAGS) $(LDLIBS)
 
 catalyst: $(OBJS)
