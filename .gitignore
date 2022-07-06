@@ -55,5 +55,6 @@ dkms.conf
 
 # Catalyst stuff
 catalyst
+tests/test_b
 tests/test_a
 

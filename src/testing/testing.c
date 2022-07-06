@@ -52,6 +52,13 @@
 #include "../jobs/jobs.h"
 #include "../parsers/parsers.h"
 
+static const char *timeout_failure =
+    "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit "
+    "within %i milliseconds\n";
+
+static const char *successful =
+    "[ \x1b[32mSUCCESS\x1B[0m ] testcase '%s' for '%s' finished successfully\n";
+
 void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_to_parent[2]) {
     int flags = 0;
     int index = 0;
@@ -170,7 +177,6 @@ void testcase_fork(struct Testcase testcase, int parent_to_child[2], int child_t
 }
 
 void timeout_test(struct Testcase testcase, int writefd, int pid) {
-    int written = 0;
     int waitpid_status = 0;
     char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
 
@@ -187,20 +193,35 @@ void timeout_test(struct Testcase testcase, int writefd, int pid) {
 
     /* Write the error message and handle any errors when
      * writing it */
-    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, "[ \x1B[31mFAILURE\x1B[0m ] testcase '%s' for test '%s' did not exit within %i milliseconds\n",
+    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, timeout_failure,
                     testcase.name.contents, testcase.path.contents, testcase.timeout);
-    written = strlen(buffer);
 
-    if(written >= PROCESS_RESPONSE_LENGTH) {
+    if(strlen(buffer) >= PROCESS_RESPONSE_LENGTH) {
         fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
                 testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
         abort();
     }
 
-    written = write(writefd, buffer, written);
-
+    write(writefd, buffer, strlen(buffer));
     kill(pid, SIGKILL);
     exit(EXIT_FAILURE);
+}
+
+void successful_test(struct Testcase testcase, int writefd, int pid) {
+    char buffer[PROCESS_RESPONSE_LENGTH + 1] = "";
+
+    /* Write the error message and handle any errors when
+     * writing it */
+    libc99_snprintf(buffer, PROCESS_RESPONSE_LENGTH, successful,
+                    testcase.name.contents, testcase.path.contents);
+
+    if(strlen(buffer) >= PROCESS_RESPONSE_LENGTH) {
+        fprintf(stderr, "failed to write error message for testcase '%s' for test '%s'-- too large (%s:%i)\n",
+                testcase.name.contents, testcase.path.contents, __FILE__, __LINE__);
+        abort();
+    }
+
+    write(writefd, buffer, strlen(buffer));
 }
 
 void handle_testcase(struct Testcase testcase, struct PipePair pair) {
@@ -235,10 +256,12 @@ void handle_testcase(struct Testcase testcase, struct PipePair pair) {
     if(testcase.input.contents != NULL)
         write(parent_to_child[1], testcase.input.contents, testcase.input.length);
     
-    /* Wait for a timeout (in milliseconds) */
+    /* Wait for a timeout (in milliseconds). If the test ends in time,
+     * it will fall through. */
     if(testcase.timeout != 0)
         timeout_test(testcase, pair.write, pid);
 
     /* Wait for the child process to quit, and extract the exit code */
     wait(&exit_code);
+    successful_test(testcase, pair.write, pid);
 }
